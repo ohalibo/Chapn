@@ -64,6 +64,18 @@ service cloud.firestore {
       allow read: if true;
       allow write: if request.auth != null;
     }
+    match /weeks/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /announcements/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /comments/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
   }
 }
 ```
@@ -75,41 +87,58 @@ service cloud.firestore {
 트레이드오프예요 — 외부에 공개하지 않고 아는 사람들끼리만 쓰는
 용도로는 충분하지만, 민감한 내용은 올리지 않는 걸 추천해요.
 
-## 4. 데이터 구조 (직접 만드실 관리자 페이지에서 참고)
+## 4. 관리자 빌더 (`admin/`)
 
-관리자 페이지는 별도로 만드신다고 하셨으니, 이 앱이 기대하는 Firestore
-구조만 정리해둘게요. 이 구조에 맞춰 문서를 추가/삭제하면 그대로 연동됩니다.
+팀원·주차·공지를 관리하는 화면은 `admin/index.html`에 따로 있어요.
+공개 사이트(`index.html`)와는 별개 페이지라 링크로 연결돼 있지 않고,
+주소를 직접 아는 사람만 들어갈 수 있어요.
 
-**`members` 컬렉션** — 팀원 한 명당 문서 하나
+1. `admin/app.js` 맨 위의 `ADMIN_PASSCODE` 값을 **배포 전에 꼭 바꾸세요.**
+   (예: `"chapn-admin-2026"` → 운영진만 아는 문구로)
+2. 로컬에서 열어보려면 메인 사이트와 같은 서버로 `http://localhost:8000/admin/` 접속
+3. 배포 후에는 `https://<도메인>/admin/` 으로 접속 — 별도 안내 없이 이 주소를 아는
+   사람만 씁니다.
 
-| 필드 | 타입 | 설명 |
-|---|---|---|
-| `name` | string | 표시 이름 (예: `김영서`) |
-| `pin` | string | 4자리 숫자 문자열 (예: `"1234"`), 서로 중복되면 안 됨 |
-| `createdAt` | timestamp | 생성 시각 (정렬용, `serverTimestamp()` 권장) |
+탭 구성:
+- **팀원 관리**: 이름 + 4자리 PIN 추가/삭제, 주차별 작성 현황 한눈에 보기
+- **주차 관리**: 각 주차 이름·시작일·종료일을 직접 수정, 새 주차 추가/삭제,
+  "기본값(12주)으로 채우기"로 처음 세팅
+- **공지 빌더**: 목록 · 편집 · 실시간 미리보기 3단 구성. 텍스트 블록과 사진 블록을
+  순서대로 쌓아서 공지를 만들면, 저장 즉시 공개 사이트 사이드바 "공지"에 나타나요.
 
-**`retrospectives` 컬렉션** — 회고 한 건당 문서 하나, 문서 ID는 반드시
-`w{주차번호}_{이름}` 형식 (예: `w1_김영서`)이어야 이 앱에서 읽힙니다.
+**⚠️ 보안 관련**: `members`와 마찬가지로 `weeks`, `announcements` 컬렉션도
+Firestore 규칙상 읽기가 열려 있어야 공개 사이트가 실시간으로 읽을 수 있어요.
+`admin/` 페이지 자체는 위 암호로만 막혀 있는 구조라, URL과 암호가 새어나가지
+않게 관리해주세요.
 
-| 필드 | 타입 | 설명 |
-|---|---|---|
-| `week` | number | 주차 번호 |
-| `person` | string | 이름 (members의 name과 동일해야 함) |
-| `date` | string | `YYYY-MM-DD` |
-| `content` | string | 회고 본문 |
-| `photos` | array\<string\> | 압축된 이미지 base64 data URL 배열 |
-| `updatedAt` | timestamp | 마지막 저장 시각 |
+## 5. 데이터 구조 참고
 
-참고로 `store.js` 안에 `addMember`, `deleteMember`, `subscribeMembers`
-함수가 이미 이 구조에 맞춰 구현되어 있어서, 관리자 페이지에서도
-`import { getStore } from "./store.js"` 해서 그대로 재사용하실 수 있어요.
+**`members`** — 팀원 한 명당 문서 하나: `name`(string), `pin`(4자리 string),
+`createdAt`(timestamp)
 
-## 5. 주차 개수 / 시작일 바꾸기
+**`weeks`** — 주차 하나당 문서 하나, 문서 ID는 `n`과 같은 문자열(예: `"1"`):
+`n`(number), `label`(string, 예: `1주차`), `start`/`end`(`YYYY-MM-DD` string)
 
-`config.js`의 `FIRST_WEEK_START`, `WEEK_COUNT` 두 값만 바꾸면 됩니다.
-지금은 2026-07-01부터 12주차까지 생성돼요.
+**`retrospectives`** — 회고 한 건당 문서 하나, 문서 ID는 반드시
+`w{주차번호}_{이름}` 형식 (예: `w1_김영서`): `week`(number), `person`(string),
+`date`(`YYYY-MM-DD`), `content`(string), `photos`(array\<string\>, base64 data URL),
+`updatedAt`(timestamp)
 
-## 6. GitHub Pages로 배포하기
+**`announcements`** — 공지 한 건당 문서 하나: `title`(string), `blocks`(array,
+각 항목은 `{type:'text', content}` 또는 `{type:'image', src, caption}`),
+`createdAt`/`updatedAt`(timestamp)
+
+이 구조는 `store.js` 하나에 다 구현되어 있고, 공개 사이트(`app.js`)와
+관리자 빌더(`admin/app.js`, `admin/builder.js`) 둘 다 같은 `store.js`를
+가져다 씁니다.
+
+## 6. 주차 기본값 바꾸기
+
+`config.js`의 `FIRST_WEEK_START`, `WEEK_COUNT`는 "기본값으로 채우기"를
+누를 때만 쓰이는 시드값이에요. 실제 주차 날짜는 언제든 관리자 빌더의
+"주차 관리" 탭에서 직접 고칠 수 있습니다.
+
+## 7. GitHub Pages로 배포하기
 
 1. 이 폴더(`chap.n`)를 GitHub 저장소로 푸시
    ```

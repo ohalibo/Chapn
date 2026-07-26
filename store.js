@@ -1,7 +1,8 @@
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
+import { defaultWeeksSeed, DEFAULT_MEMBER_COLOR } from "./config.js";
 
 // 이 파일은 "데모 모드(로컬 브라우저 저장)"와 "실서비스 모드(Firebase)"를
-// 똑같은 함수 이름으로 감싸주는 어댑터입니다. app.js / admin.js는 store가
+// 똑같은 함수 이름으로 감싸주는 어댑터입니다. app.js / admin/*.js는 store가
 // 어느 모드인지 몰라도 되게 짜여 있어요.
 
 let storePromise = null;
@@ -18,21 +19,40 @@ export function getStore() {
 // ---------------------------------------------------------------------------
 function createLocalStore() {
   const KEY = "chapn_demo_v1";
-  const listeners = { members: new Set(), entries: new Set() };
+  const listeners = {
+    members: new Set(),
+    entries: new Set(),
+    weeks: new Set(),
+    announcements: new Set(),
+    comments: new Set(),
+  };
 
   function seed() {
     return {
       members: [
-        { id: "seed-1", name: "김영서", pin: "1111", createdAt: Date.now() - 2000 },
-        { id: "seed-2", name: "남현아", pin: "2222", createdAt: Date.now() - 1000 },
+        { id: "seed-1", name: "김영서", pin: "1111", color: { h: 208, s: 65, l: 60 }, createdAt: Date.now() - 2000 },
+        { id: "seed-2", name: "남현아", pin: "2222", color: { h: 340, s: 60, l: 65 }, createdAt: Date.now() - 1000 },
+      ],
+      weeks: defaultWeeksSeed(),
+      announcements: [
+        {
+          id: "seed-a1",
+          title: "챕터n 회고록 사용법",
+          blocks: [
+            { type: "text", content: "안녕하세요! 매주 자신의 폴더에 들어가서 회고를 남겨주세요.\n사진도 함께 첨부할 수 있어요." },
+          ],
+          createdAt: Date.now() - 1000 * 60 * 60,
+          updatedAt: Date.now() - 1000 * 60 * 60,
+        },
       ],
       entries: {
         w1_김영서: {
           week: 1,
           person: "김영서",
           date: "2026-07-05",
-          content:
-            "Keep - 나의 가치찾기 한 것: 진심으로 사랑하며 자유롭게 꿈꾸는 사람\nProblem - 애들 성적 입력이 계속 밀렸다\nTry - 다음 주엔 화장대부터 정리해보기",
+          keep: "나의 가치찾기 한 것: 진심으로 사랑하며 자유롭게 꿈꾸는 사람",
+          problem: "애들 성적 입력이 계속 밀렸다",
+          try: "다음 주엔 화장대부터 정리해보기",
           photos: [],
           updatedAt: Date.now() - 1000 * 60 * 60 * 5,
         },
@@ -40,12 +60,14 @@ function createLocalStore() {
           week: 1,
           person: "남현아",
           date: "2026-07-06",
-          content:
-            "Keep - 인스타/블로그에 회고록 적으며 나를 위한 시간 갖기\nProblem - 시도와 도전을 구분 못하고 미루기만 함\nTry - 다들 20분씩 투자해보기, 궁금한 것 물어보기",
+          keep: "인스타/블로그에 회고록 적으며 나를 위한 시간 갖기",
+          problem: "시도와 도전을 구분 못하고 미루기만 함",
+          try: "다들 20분씩 투자해보기, 궁금한 것 물어보기",
           photos: [],
           updatedAt: Date.now() - 1000 * 60 * 60 * 3,
         },
       },
+      comments: [],
     };
   }
 
@@ -53,7 +75,11 @@ function createLocalStore() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) throw new Error("empty");
-      return JSON.parse(raw);
+      const data = JSON.parse(raw);
+      if (!data.weeks) data.weeks = defaultWeeksSeed();
+      if (!data.announcements) data.announcements = [];
+      if (!data.comments) data.comments = [];
+      return data;
     } catch {
       const data = seed();
       save(data);
@@ -71,8 +97,7 @@ function createLocalStore() {
 
   window.addEventListener("storage", (e) => {
     if (e.key === KEY) {
-      listeners.members.forEach((cb) => cb(load()));
-      listeners.entries.forEach((cb) => cb(load()));
+      Object.keys(listeners).forEach((kind) => listeners[kind].forEach((cb) => cb(load())));
     }
   });
 
@@ -87,12 +112,31 @@ function createLocalStore() {
       return () => listeners.members.delete(handler);
     },
 
-    async addMember(name, pin) {
+    async addMember(name, pin, color) {
       const data = load();
       if (data.members.some((m) => m.pin === pin)) {
         return { ok: false, error: "이미 사용 중인 번호예요." };
       }
-      data.members.push({ id: `m-${Date.now()}`, name, pin, createdAt: Date.now() });
+      data.members.push({
+        id: `m-${Date.now()}`,
+        name,
+        pin,
+        color: color || { ...DEFAULT_MEMBER_COLOR },
+        createdAt: Date.now(),
+      });
+      save(data);
+      notify("members");
+      return { ok: true };
+    },
+
+    async updateMember(id, fields) {
+      const data = load();
+      if (fields.pin && data.members.some((m) => m.id !== id && m.pin === fields.pin)) {
+        return { ok: false, error: "이미 사용 중인 번호예요." };
+      }
+      const idx = data.members.findIndex((m) => m.id === id);
+      if (idx < 0) return { ok: false, error: "팀원을 찾을 수 없어요." };
+      data.members[idx] = { ...data.members[idx], ...fields };
       save(data);
       notify("members");
       return { ok: true };
@@ -131,6 +175,107 @@ function createLocalStore() {
       handler(load());
       listeners.entries.add(handler);
       return () => listeners.entries.delete(handler);
+    },
+
+    subscribeWeeks(cb) {
+      const handler = (data) => cb([...data.weeks].sort((a, b) => a.n - b.n));
+      handler(load());
+      listeners.weeks.add(handler);
+      return () => listeners.weeks.delete(handler);
+    },
+
+    async saveWeek(week) {
+      const data = load();
+      const id = week.id || String(week.n);
+      const idx = data.weeks.findIndex((w) => w.id === id);
+      const record = { ...week, id };
+      if (idx >= 0) data.weeks[idx] = record;
+      else data.weeks.push(record);
+      save(data);
+      notify("weeks");
+    },
+
+    async deleteWeek(id) {
+      const data = load();
+      data.weeks = data.weeks.filter((w) => w.id !== id);
+      save(data);
+      notify("weeks");
+    },
+
+    async seedDefaultWeeks() {
+      const data = load();
+      data.weeks = defaultWeeksSeed();
+      save(data);
+      notify("weeks");
+    },
+
+    subscribeAnnouncements(cb) {
+      const handler = (data) => cb([...data.announcements].sort((a, b) => b.createdAt - a.createdAt));
+      handler(load());
+      listeners.announcements.add(handler);
+      return () => listeners.announcements.delete(handler);
+    },
+
+    async saveAnnouncement(id, fields) {
+      const data = load();
+      if (id) {
+        const idx = data.announcements.findIndex((a) => a.id === id);
+        if (idx >= 0) {
+          data.announcements[idx] = { ...data.announcements[idx], ...fields, updatedAt: Date.now() };
+        }
+        save(data);
+        notify("announcements");
+        return id;
+      }
+      const newId = `a-${Date.now()}`;
+      data.announcements.push({ id: newId, ...fields, createdAt: Date.now(), updatedAt: Date.now() });
+      save(data);
+      notify("announcements");
+      return newId;
+    },
+
+    async deleteAnnouncement(id) {
+      const data = load();
+      data.announcements = data.announcements.filter((a) => a.id !== id);
+      save(data);
+      notify("announcements");
+    },
+
+    subscribeComments(entryId, cb) {
+      const handler = (data) =>
+        cb(data.comments.filter((c) => c.entryId === entryId).sort((a, b) => a.createdAt - b.createdAt));
+      handler(load());
+      listeners.comments.add(handler);
+      return () => listeners.comments.delete(handler);
+    },
+
+    async addComment(entryId, fields) {
+      const data = load();
+      data.comments.push({
+        id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        entryId,
+        parentId: null,
+        ...fields,
+        createdAt: Date.now(),
+      });
+      save(data);
+      notify("comments");
+    },
+
+    async updateComment(id, fields) {
+      const data = load();
+      const idx = data.comments.findIndex((c) => c.id === id);
+      if (idx < 0) return;
+      data.comments[idx] = { ...data.comments[idx], ...fields, updatedAt: Date.now() };
+      save(data);
+      notify("comments");
+    },
+
+    async deleteComment(id) {
+      const data = load();
+      data.comments = data.comments.filter((c) => c.id !== id && c.parentId !== id);
+      save(data);
+      notify("comments");
     },
   };
 }
@@ -173,6 +318,9 @@ async function createFirestoreStore() {
 
   const membersCol = collection(db, "members");
   const entriesCol = collection(db, "retrospectives");
+  const weeksCol = collection(db, "weeks");
+  const announcementsCol = collection(db, "announcements");
+  const commentsCol = collection(db, "comments");
 
   return {
     mode: "live",
@@ -186,10 +334,26 @@ async function createFirestoreStore() {
       });
     },
 
-    async addMember(name, pin) {
+    async addMember(name, pin, color) {
       const dupe = await getDocs(query(membersCol, where("pin", "==", pin), limit(1)));
       if (!dupe.empty) return { ok: false, error: "이미 사용 중인 번호예요." };
-      await addDoc(membersCol, { name, pin, createdAt: serverTimestamp() });
+      await addDoc(membersCol, {
+        name,
+        pin,
+        color: color || { ...DEFAULT_MEMBER_COLOR },
+        createdAt: serverTimestamp(),
+      });
+      return { ok: true };
+    },
+
+    async updateMember(id, fields) {
+      if (fields.pin) {
+        const dupe = await getDocs(query(membersCol, where("pin", "==", fields.pin), limit(1)));
+        if (!dupe.empty && dupe.docs[0].id !== id) {
+          return { ok: false, error: "이미 사용 중인 번호예요." };
+        }
+      }
+      await setDoc(doc(db, "members", id), fields, { merge: true });
       return { ok: true };
     },
 
@@ -226,6 +390,87 @@ async function createFirestoreStore() {
         snap.docs.forEach((d) => map.set(d.id, d.data()));
         cb(map);
       });
+    },
+
+    subscribeWeeks(cb) {
+      return onSnapshot(weeksCol, (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => a.n - b.n);
+        cb(list);
+      });
+    },
+
+    async saveWeek(week) {
+      const id = week.id || String(week.n);
+      const { id: _drop, ...data } = week;
+      await setDoc(doc(db, "weeks", id), data, { merge: true });
+    },
+
+    async deleteWeek(id) {
+      await deleteDoc(doc(db, "weeks", id));
+    },
+
+    async seedDefaultWeeks() {
+      const weeks = defaultWeeksSeed();
+      await Promise.all(
+        weeks.map((w) => {
+          const { id, ...data } = w;
+          return setDoc(doc(db, "weeks", id), data, { merge: true });
+        })
+      );
+    },
+
+    subscribeAnnouncements(cb) {
+      return onSnapshot(announcementsCol, (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+        cb(list);
+      });
+    },
+
+    async saveAnnouncement(id, fields) {
+      if (id) {
+        await setDoc(doc(db, "announcements", id), { ...fields, updatedAt: serverTimestamp() }, { merge: true });
+        return id;
+      }
+      const ref = await addDoc(announcementsCol, {
+        ...fields,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return ref.id;
+    },
+
+    async deleteAnnouncement(id) {
+      await deleteDoc(doc(db, "announcements", id));
+    },
+
+    subscribeComments(entryId, cb) {
+      return onSnapshot(query(commentsCol, where("entryId", "==", entryId)), (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+        cb(list);
+      });
+    },
+
+    async addComment(entryId, fields) {
+      await addDoc(commentsCol, {
+        entryId,
+        parentId: null,
+        ...fields,
+        createdAt: serverTimestamp(),
+      });
+    },
+
+    async updateComment(id, fields) {
+      await setDoc(doc(db, "comments", id), { ...fields, updatedAt: serverTimestamp() }, { merge: true });
+    },
+
+    async deleteComment(id) {
+      await deleteDoc(doc(db, "comments", id));
+      const replies = await getDocs(query(commentsCol, where("parentId", "==", id)));
+      await Promise.all(replies.docs.map((d) => deleteDoc(d.ref)));
     },
   };
 }
