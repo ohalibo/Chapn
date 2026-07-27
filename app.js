@@ -131,30 +131,16 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-let iconUidCounter = 0;
-
 function folderIcon(color) {
   const { h, s, l } = color || DEFAULT_MEMBER_COLOR;
-  const uid = `fg${iconUidCounter++}`;
-  const tabLight = hslToHex(h, s, clamp(l + 22, 0, 92));
-  const tabDark = hslToHex(h, s, clamp(l + 6, 0, 88));
-  const bodyLight = hslToHex(h, s, clamp(l + 12, 0, 90));
-  const bodyDark = hslToHex(h, s, clamp(l - 12, 8, 100));
-  const glyph = hslToHex(h, s, clamp(l - 22, 5, 100));
-  return `<svg viewBox="0 0 68 54" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="${uid}Tab" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${tabLight}"/><stop offset="1" stop-color="${tabDark}"/>
-      </linearGradient>
-      <linearGradient id="${uid}Body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${bodyLight}"/><stop offset="1" stop-color="${bodyDark}"/>
-      </linearGradient>
-    </defs>
-    <path d="M2 8a3 3 0 0 1 3-3h15l4 4h39a3 3 0 0 1 3 3v3H2V8Z" fill="url(#${uid}Tab)"/>
-    <path d="M2 11h64v32a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V11Z" fill="url(#${uid}Body)"/>
-    <rect x="21" y="19" width="26" height="18" rx="1.5" fill="#ffffff" opacity="0.5"/>
-    <circle cx="27" cy="25" r="2.1" fill="${glyph}"/>
-    <path d="M23 34l6-7 5 5.5 4-4.5 6 6H23Z" fill="${glyph}"/>
+  const fill = hslToHex(h, Math.min(s, 58), clamp(l + 16, 55, 76));
+  return `<svg viewBox="0 0 58 48" xmlns="http://www.w3.org/2000/svg">
+    <path d="M6 17V12a3 3 0 0 1 3-3h12l4 4h20a3 3 0 0 1 3 3v1H6Z" fill="${fill}"/>
+    <rect x="3" y="15" width="52" height="30" rx="6" fill="${fill}"/>
+    <path d="M9 18Q29 14 51 18" stroke="#ffffff" stroke-opacity="0.32" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <rect x="19" y="24" width="22" height="16" rx="2" fill="#ffffff" fill-opacity="0.45"/>
+    <circle cx="25" cy="29" r="2" fill="#ffffff" fill-opacity="0.85"/>
+    <path d="M21 37l6-7 5 5 4-4.5 6 6.5H21Z" fill="#ffffff" fill-opacity="0.85"/>
   </svg>`;
 }
 
