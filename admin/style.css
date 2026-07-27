@@ -9,6 +9,7 @@
   --btn-bg: #f1f0eb;
   --btn-bg-hover: #e6e4dc;
   --danger: #a8402f;
+  --accent-blue: #2f68d6;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -16,6 +17,7 @@
     --line: rgba(239, 238, 232, 0.22);
     --btn-bg: #232220; --btn-bg-hover: #2d2c29;
     --danger: #d9705a;
+    --accent-blue: #6ea1f5;
   }
 }
 
@@ -33,7 +35,34 @@ button, input, textarea { font-family: inherit; letter-spacing: inherit; color: 
 .upper { text-transform: uppercase; }
 
 /* ---------- App shell: left sidebar + main ---------- */
-.app { height: 100vh; display: flex; flex-direction: row; background: var(--paper); }
+/* ---------- 창틀 (공개 사이트와 같은 macOS 느낌의 프레임) ---------- */
+.app {
+  width: min(1120px, calc(100vw - 40px));
+  height: min(720px, calc(100vh - 40px));
+  margin: 20px auto;
+  background: var(--panel);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px -20px rgba(20, 20, 15, 0.35), 0 2px 10px rgba(20, 20, 15, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.admin-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.admin-titlebar .win-title {
+  margin-left: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.admin-body { flex: 1; display: flex; min-height: 0; }
+
 .admin-sidebar {
   width: 200px;
   flex-shrink: 0;
@@ -41,7 +70,7 @@ button, input, textarea { font-family: inherit; letter-spacing: inherit; color: 
   flex-direction: column;
   border-right: 1px solid var(--line);
   padding: 16px 10px;
-  background: var(--paper);
+  background: var(--panel);
 }
 .ab-title {
   font-weight: 700;
@@ -60,7 +89,7 @@ button, input, textarea { font-family: inherit; letter-spacing: inherit; color: 
   text-align: left;
 }
 .ab-tab:hover { color: var(--ink); }
-.ab-tab.active { color: var(--ink); font-weight: 700; }
+.ab-tab.active { color: var(--accent-blue); font-weight: 700; }
 .ab-spacer { flex: 1; }
 .ab-mode {
   font-size: 0.66rem;
@@ -71,7 +100,7 @@ button, input, textarea { font-family: inherit; letter-spacing: inherit; color: 
   margin-top: 12px;
 }
 
-.app-main { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 60px; background: var(--paper); }
+.app-main { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 60px; background: var(--panel); }
 .app-main.no-scroll { overflow: hidden; padding: 0; display: flex; }
 
 /* ---------- Buttons ----------
@@ -273,18 +302,63 @@ input:focus, textarea:focus { outline: none; border-bottom: 1.5px solid var(--in
 .dp-foot button { background: none; border: none; cursor: pointer; font-size: 0.72rem; color: var(--ink-soft); font-weight: 700; }
 .dp-foot button:hover { color: var(--ink); }
 
-/* ---------- Gate ---------- */
-.gate-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--paper); }
-.gate-card {
+/* ---------- Gate (공개 사이트 로그인 화면과 동일한 톤) ---------- */
+.gate-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--paper);
+}
+.gate-window {
+  width: min(360px, 100%);
   background: var(--panel);
-  border: 1px solid var(--line);
-  padding: 36px 32px;
-  width: min(340px, 90vw);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px -20px rgba(20, 20, 15, 0.35), 0 2px 10px rgba(20, 20, 15, 0.08);
+  overflow: hidden;
+}
+.cargo-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.tl-dot { width: 11px; height: 11px; border-radius: 50%; }
+.tl-dot.red { background: #ff5f57; }
+.tl-dot.yellow { background: #febc2e; }
+.tl-dot.green { background: #28c840; }
+.gate-card {
+  padding: 36px 32px 30px;
   text-align: center;
 }
-.gate-card h1 { font-size: 1.1rem; margin: 0 0 6px; }
-.gate-card p { color: var(--ink-soft); font-size: 0.82rem; margin: 0 0 20px; }
-.gate-card input { text-align: center; letter-spacing: 0.1em; margin-bottom: 10px; }
+.gate-kicker { font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); margin: 0 0 10px; }
+.gate-card h1 { font-size: 1.15rem; font-weight: 700; margin: 0 0 6px; }
+.gate-card p { color: var(--ink-soft); font-size: 0.83rem; margin: 0 0 26px; }
+.gate-card input {
+  width: 100%;
+  font-size: 1.5rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  padding: 14px 0 14px 0.3em;
+  border: none;
+  background: none;
+  margin-bottom: 12px;
+}
+.gate-card input:focus { outline: none; }
+.gate-card .btn-login {
+  width: 100%;
+  padding: 11px;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gate-card .btn-login:hover { opacity: 0.9; }
 
 /* ---------- Builder: 3-pane layout ---------- */
 .builder { flex: 1; display: flex; min-width: 0; min-height: 0; }
@@ -308,13 +382,25 @@ input:focus, textarea:focus { outline: none; border-bottom: 1.5px solid var(--in
 
 .post-list { list-style: none; margin: 0; padding: 16px 12px; }
 .post-list li {
-  padding: 9px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px;
   cursor: pointer;
   margin-bottom: 2px;
 }
 .post-list li:hover { background: var(--line); }
 .post-list li.active { background: var(--ink); color: var(--paper); }
-.post-list .pl-title { font-size: 0.85rem; font-weight: 600; margin-bottom: 2px; }
+.post-list .pl-icon { width: 22px; height: 22px; flex-shrink: 0; }
+.post-list .pl-text { min-width: 0; }
+.post-list .pl-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .post-list .pl-meta { font-size: 0.68rem; opacity: 0.7; }
 
 .editor-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }

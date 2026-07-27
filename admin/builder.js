@@ -76,6 +76,16 @@ export function mountBuilder(container, store) {
     frame.src = `../index.html${hash}`;
   }
 
+  function docIcon() {
+    return `<svg viewBox="0 0 24 24" class="pl-icon" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 2h9l5 5v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="#fbfbf9" stroke="#d8d6cd" stroke-width="1"/>
+      <path d="M14 2v4a1 1 0 0 0 1 1h4L14 2Z" fill="#e7e5de"/>
+      <rect x="7" y="12" width="8" height="1.6" rx="0.8" fill="#c1402a"/>
+      <rect x="7" y="15.4" width="10" height="1.4" rx="0.7" fill="#d8d6cd"/>
+      <rect x="7" y="18.4" width="6" height="1.4" rx="0.7" fill="#d8d6cd"/>
+    </svg>`;
+  }
+
   function renderList() {
     const listEl = document.getElementById("post-list");
     if (!listEl) return;
@@ -87,8 +97,11 @@ export function mountBuilder(container, store) {
       .map(
         (a) => `
       <li data-id="${a.id}" class="${selectedId === a.id ? "active" : ""}">
-        <div class="pl-title">${esc(a.title || "제목 없음")}</div>
-        <div class="pl-meta">${formatDate(a.updatedAt)}</div>
+        ${docIcon()}
+        <div class="pl-text">
+          <div class="pl-title">${esc(a.title || "제목 없음")}</div>
+          <div class="pl-meta">${formatDate(a.updatedAt)}</div>
+        </div>
       </li>`
       )
       .join("");

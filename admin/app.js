@@ -101,14 +101,20 @@ function init() {
 function renderGate() {
   root.innerHTML = `
     <div class="gate-wrap">
-      <div class="gate-card">
-        <h1>Chapter n admin</h1>
-        <p>운영진 암호를 입력하세요</p>
-        <form id="pw-form" novalidate>
-          <input type="password" id="pw-input" autocomplete="off" />
-          <div class="form-error" id="pw-error"></div>
-          <button type="submit" class="btn btn-accent" style="width:100%; padding:10px;">입장하기</button>
-        </form>
+      <div class="gate-window">
+        <div class="cargo-titlebar">
+          <span class="tl-dot red"></span><span class="tl-dot yellow"></span><span class="tl-dot green"></span>
+        </div>
+        <div class="gate-card">
+          <p class="gate-kicker">Admin</p>
+          <h1>Chapter n admin</h1>
+          <p>운영진 암호를 입력하세요</p>
+          <form id="pw-form" novalidate>
+            <input type="password" id="pw-input" autocomplete="off" />
+            <div class="form-error" id="pw-error"></div>
+            <button type="submit" class="btn-login">입장하기</button>
+          </form>
+        </div>
       </div>
     </div>
   `;
@@ -157,17 +163,22 @@ function refreshTabData() {
 function render() {
   root.innerHTML = `
     <div class="app">
-      <aside class="admin-sidebar">
-        <div class="ab-title">Chapter n admin</div>
-        <nav class="admin-nav">
-          ${TABS.map(
-            (t) => `<button class="ab-tab ${activeTab === t.key ? "active" : ""}" data-tab="${t.key}">${t.label}</button>`
-          ).join("")}
-        </nav>
-        <div class="ab-spacer"></div>
-        <span class="ab-mode">${store.mode === "demo" ? "데모 모드" : "실서비스 모드"}</span>
-      </aside>
-      <main class="app-main ${activeTab === "notices" ? "no-scroll" : ""}" id="main"></main>
+      <div class="admin-titlebar">
+        <span class="tl-dot red"></span><span class="tl-dot yellow"></span><span class="tl-dot green"></span>
+        <span class="win-title">Chapter n admin</span>
+      </div>
+      <div class="admin-body">
+        <aside class="admin-sidebar">
+          <nav class="admin-nav">
+            ${TABS.map(
+              (t) => `<button class="ab-tab ${activeTab === t.key ? "active" : ""}" data-tab="${t.key}">${t.label}</button>`
+            ).join("")}
+          </nav>
+          <div class="ab-spacer"></div>
+          <span class="ab-mode">${store.mode === "demo" ? "데모 모드" : "실서비스 모드"}</span>
+        </aside>
+        <main class="app-main ${activeTab === "notices" ? "no-scroll" : ""}" id="main"></main>
+      </div>
     </div>
   `;
   root.querySelectorAll(".ab-tab").forEach((btn) => {
