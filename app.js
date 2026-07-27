@@ -133,14 +133,33 @@ function clamp(n, min, max) {
 
 function folderIcon(color) {
   const { h, s, l } = color || DEFAULT_MEMBER_COLOR;
-  const fill = hslToHex(h, Math.min(s, 58), clamp(l + 16, 55, 76));
-  return `<svg viewBox="0 0 58 48" xmlns="http://www.w3.org/2000/svg">
-    <path d="M6 17V12a3 3 0 0 1 3-3h12l4 4h20a3 3 0 0 1 3 3v1H6Z" fill="${fill}"/>
-    <rect x="3" y="15" width="52" height="30" rx="6" fill="${fill}"/>
-    <path d="M9 18Q29 14 51 18" stroke="#ffffff" stroke-opacity="0.32" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-    <rect x="19" y="24" width="22" height="16" rx="2" fill="#ffffff" fill-opacity="0.45"/>
-    <circle cx="25" cy="29" r="2" fill="#ffffff" fill-opacity="0.85"/>
-    <path d="M21 37l6-7 5 5 4-4.5 6 6.5H21Z" fill="#ffffff" fill-opacity="0.85"/>
+  const uid = `fg${Math.random().toString(36).slice(2, 8)}`;
+  const tabTop = hslToHex(h, clamp(s + 6, 0, 90), clamp(l + 8, 40, 68));
+  const tabBottom = hslToHex(h, clamp(s + 6, 0, 90), clamp(l - 8, 25, 55));
+  const bodyTop = hslToHex(h, clamp(s + 2, 0, 85), clamp(l + 30, 65, 88));
+  const bodyMid = hslToHex(h, clamp(s + 2, 0, 85), clamp(l + 14, 55, 78));
+  const bodyBottom = hslToHex(h, s, clamp(l - 4, 35, 65));
+  const lineColor = hslToHex(h, s, clamp(l - 22, 15, 45));
+  return `<svg viewBox="0 0 62 50" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="${uid}Tab" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${tabTop}"/><stop offset="1" stop-color="${tabBottom}"/>
+      </linearGradient>
+      <linearGradient id="${uid}Body" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${bodyTop}"/>
+        <stop offset="0.55" stop-color="${bodyMid}"/>
+        <stop offset="1" stop-color="${bodyBottom}"/>
+      </linearGradient>
+      <linearGradient id="${uid}Gloss" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+        <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="M8 18 L8 10 Q8 6 12 6 L24 6 Q30 6 32 10 Q34 14 30 16 L8 16 Z" fill="url(#${uid}Tab)"/>
+    <rect x="5" y="14" width="52" height="32" rx="9" fill="url(#${uid}Body)"/>
+    <path d="M7 16 Q19 21 33 15" stroke="${lineColor}" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.3"/>
+    <rect x="5" y="14" width="52" height="32" rx="9" fill="url(#${uid}Gloss)"/>
+    <path d="M11 39h40M11 42.5h40" stroke="${lineColor}" stroke-width="1" stroke-linecap="round" opacity="0.14"/>
   </svg>`;
 }
 
