@@ -131,35 +131,30 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+let iconUidCounter = 0;
+
 function folderIcon(color) {
   const { h, s, l } = color || DEFAULT_MEMBER_COLOR;
-  const uid = `fg${Math.random().toString(36).slice(2, 8)}`;
-  const tabTop = hslToHex(h, clamp(s + 6, 0, 90), clamp(l + 8, 40, 68));
-  const tabBottom = hslToHex(h, clamp(s + 6, 0, 90), clamp(l - 8, 25, 55));
-  const bodyTop = hslToHex(h, clamp(s + 2, 0, 85), clamp(l + 30, 65, 88));
-  const bodyMid = hslToHex(h, clamp(s + 2, 0, 85), clamp(l + 14, 55, 78));
-  const bodyBottom = hslToHex(h, s, clamp(l - 4, 35, 65));
-  const lineColor = hslToHex(h, s, clamp(l - 22, 15, 45));
-  return `<svg viewBox="0 0 62 50" xmlns="http://www.w3.org/2000/svg">
+  const uid = `fg${iconUidCounter++}`;
+  const tabLight = hslToHex(h, s, clamp(l + 22, 0, 92));
+  const tabDark = hslToHex(h, s, clamp(l + 6, 0, 88));
+  const bodyLight = hslToHex(h, s, clamp(l + 12, 0, 90));
+  const bodyDark = hslToHex(h, s, clamp(l - 12, 8, 100));
+  const glyph = hslToHex(h, s, clamp(l - 22, 5, 100));
+  return `<svg viewBox="0 0 68 54" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="${uid}Tab" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${tabTop}"/><stop offset="1" stop-color="${tabBottom}"/>
+        <stop offset="0" stop-color="${tabLight}"/><stop offset="1" stop-color="${tabDark}"/>
       </linearGradient>
       <linearGradient id="${uid}Body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${bodyTop}"/>
-        <stop offset="0.55" stop-color="${bodyMid}"/>
-        <stop offset="1" stop-color="${bodyBottom}"/>
-      </linearGradient>
-      <linearGradient id="${uid}Gloss" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
-        <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+        <stop offset="0" stop-color="${bodyLight}"/><stop offset="1" stop-color="${bodyDark}"/>
       </linearGradient>
     </defs>
-    <path d="M8 18 L8 10 Q8 6 12 6 L24 6 Q30 6 32 10 Q34 14 30 16 L8 16 Z" fill="url(#${uid}Tab)"/>
-    <rect x="5" y="14" width="52" height="32" rx="9" fill="url(#${uid}Body)"/>
-    <path d="M7 16 Q19 21 33 15" stroke="${lineColor}" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.3"/>
-    <rect x="5" y="14" width="52" height="32" rx="9" fill="url(#${uid}Gloss)"/>
-    <path d="M11 39h40M11 42.5h40" stroke="${lineColor}" stroke-width="1" stroke-linecap="round" opacity="0.14"/>
+    <path d="M2 8a3 3 0 0 1 3-3h15l4 4h39a3 3 0 0 1 3 3v3H2V8Z" fill="url(#${uid}Tab)"/>
+    <path d="M2 11h64v32a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V11Z" fill="url(#${uid}Body)"/>
+    <rect x="21" y="19" width="26" height="18" rx="1.5" fill="#ffffff" opacity="0.5"/>
+    <circle cx="27" cy="25" r="2.1" fill="${glyph}"/>
+    <path d="M23 34l6-7 5 5.5 4-4.5 6 6H23Z" fill="${glyph}"/>
   </svg>`;
 }
 
