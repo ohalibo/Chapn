@@ -16,6 +16,7 @@ let store = null;
 let members = [];
 let allEntries = new Map();
 let WEEKS = [];
+let MONTHS = [];
 let announcements = [];
 let session = loadSession();
 let entryUnsub = null;
@@ -43,6 +44,10 @@ async function init() {
   });
   store.subscribeWeeks((list) => {
     WEEKS = list;
+    render();
+  });
+  store.subscribeMonths((list) => {
+    MONTHS = list;
     render();
   });
   store.subscribeAnnouncements((list) => {
@@ -83,12 +88,13 @@ function esc(str) {
 
 function parseHash() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  if (parts[0] === "week" && parts[1]) {
-    const week = Number(parts[1]);
+  if ((parts[0] === "week" || parts[0] === "month") && parts[1]) {
+    const kind = parts[0];
+    const n = Number(parts[1]);
     if (parts[2] === "person" && parts[3]) {
-      return { view: "entry", week, person: decodeURIComponent(parts[3]) };
+      return { view: "entry", kind, n, person: decodeURIComponent(parts[3]) };
     }
-    return { view: "people", week };
+    return { view: "people", kind, n };
   }
   if (parts[0] === "notice" && parts[1]) {
     return { view: "notice", noticeId: decodeURIComponent(parts[1]) };
@@ -100,8 +106,12 @@ function go(hash) {
   location.hash = hash;
 }
 
-function entryId(week, person) {
-  return `w${week}_${person}`;
+function entryKey(kind, n, person) {
+  return `${kind === "month" ? "m" : "w"}${n}_${person}`;
+}
+
+function periodsFor(kind) {
+  return kind === "month" ? MONTHS : WEEKS;
 }
 
 function isEntryFilled(e) {
@@ -195,10 +205,18 @@ function render() {
           <div class="sb-section-title">주차</div>
           ${WEEKS.map(
             (w) => `
-            <button class="sb-item ${route.week === w.n ? "active" : ""}" data-hash="#/week/${w.n}">
+            <button class="sb-item ${route.kind === "week" && route.n === w.n ? "active" : ""}" data-hash="#/week/${w.n}">
               ${sidebarIcon()}<span class="sb-label">${esc(w.label)}</span>
             </button>`
           ).join("")}
+          ${MONTHS.length > 0 ? `
+          <div class="sb-section-title">월간</div>
+          ${MONTHS.map(
+            (m) => `
+            <button class="sb-item ${route.kind === "month" && route.n === m.n ? "active" : ""}" data-hash="#/month/${m.n}">
+              ${sidebarIcon()}<span class="sb-label">${esc(m.label)}</span>
+            </button>`
+          ).join("")}` : ""}
         </aside>
         <main class="cargo-main" id="view"></main>
       </div>
@@ -215,18 +233,32 @@ function render() {
   });
 
   if (route.view === "weeks") renderWeeks();
-  else if (route.view === "people") renderPeople(route.week);
+  else if (route.view === "people") renderPeople(route.kind, route.n);
   else if (route.view === "notice") renderNotice(route.noticeId);
-  else renderEntry(route.week, route.person);
+  else renderEntry(route.kind, route.n, route.person);
 }
 
 // ---------------------------------------------------------------------------
 // View: weeks grid
 // ---------------------------------------------------------------------------
+function periodFolderTiles(kind, periods) {
+  return periods.map((p) => {
+    const total = members.length;
+    const filled = members.filter((m) => isEntryFilled(allEntries.get(entryKey(kind, p.n, m.name)))).length;
+    return `
+      <button class="folder-tile" data-hash="#/${kind}/${p.n}">
+        ${folderIcon()}
+        <span class="ft-label">${filled > 0 ? '<span class="status-dot"></span>' : ""}${esc(p.label)}</span>
+        <span class="ft-meta">${formatRange(p.start, p.end)} · ${filled}/${total || 0}</span>
+      </button>
+    `;
+  }).join("");
+}
+
 function renderWeeks() {
   const view = document.getElementById("view");
-  if (WEEKS.length === 0) {
-    view.innerHTML = `<div class="empty-state">아직 등록된 주차가 없어요. 운영진에게 문의해주세요.</div>`;
+  if (WEEKS.length === 0 && MONTHS.length === 0 && announcements.length === 0) {
+    view.innerHTML = `<div class="empty-state">아직 등록된 주차/월간이 없어요. 운영진에게 문의해주세요.</div>`;
     return;
   }
 
@@ -237,21 +269,10 @@ function renderWeeks() {
     </button>
   `).join("");
 
-  const tiles = WEEKS.map((w) => {
-    const total = members.length;
-    const filled = members.filter((m) => isEntryFilled(allEntries.get(entryId(w.n, m.name)))).length;
-    return `
-      <button class="folder-tile" data-hash="#/week/${w.n}">
-        ${folderIcon()}
-        <span class="ft-label">${filled > 0 ? '<span class="status-dot"></span>' : ""}${esc(w.label)}</span>
-        <span class="ft-meta">${formatRange(w.start, w.end)} · ${filled}/${total || 0}</span>
-      </button>
-    `;
-  }).join("");
-
   view.innerHTML = `
     ${announcements.length > 0 ? `<div class="file-grid">${noticeTiles}</div><hr class="section-divider" />` : ""}
-    <div class="folder-grid">${tiles}</div>
+    ${WEEKS.length > 0 ? `<div class="folder-grid">${periodFolderTiles("week", WEEKS)}</div>` : ""}
+    ${MONTHS.length > 0 ? `${WEEKS.length > 0 ? '<hr class="section-divider" />' : ""}<div class="folder-grid">${periodFolderTiles("month", MONTHS)}</div>` : ""}
   `;
   view.querySelectorAll(".folder-tile, .file-tile").forEach((el) => {
     el.addEventListener("click", () => go(el.dataset.hash));
@@ -259,11 +280,11 @@ function renderWeeks() {
 }
 
 // ---------------------------------------------------------------------------
-// View: people grid (for a given week)
+// View: people grid (for a given week or month)
 // ---------------------------------------------------------------------------
-function renderPeople(week) {
+function renderPeople(kind, n) {
   const view = document.getElementById("view");
-  const w = WEEKS.find((x) => x.n === week);
+  const w = periodsFor(kind).find((x) => x.n === n);
   if (!w) return renderNotFound(view);
 
   if (members.length === 0) {
@@ -272,11 +293,11 @@ function renderPeople(week) {
   }
 
   const tiles = members.map((m) => {
-    const e = allEntries.get(entryId(week, m.name));
+    const e = allEntries.get(entryKey(kind, n, m.name));
     const filled = isEntryFilled(e);
     const isMe = m.name === session.name;
     return `
-      <button class="folder-tile ${isMe ? "is-me" : ""}" data-hash="#/week/${week}/person/${encodeURIComponent(m.name)}">
+      <button class="folder-tile ${isMe ? "is-me" : ""}" data-hash="#/${kind}/${n}/person/${encodeURIComponent(m.name)}">
         ${folderIcon(m.color)}
         <span class="ft-label">${filled ? '<span class="status-dot"></span>' : ""}${esc(m.name)}</span>
         ${isMe ? '<span class="ft-me-tag">내 폴더</span>' : `<span class="ft-meta">${filled ? "작성 완료" : "미작성"}</span>`}
@@ -297,9 +318,9 @@ function renderNotFound(view) {
 // ---------------------------------------------------------------------------
 // View: single entry (read or edit) — gallery-style detail page
 // ---------------------------------------------------------------------------
-function renderEntry(week, person) {
+function renderEntry(kind, n, person) {
   const view = document.getElementById("view");
-  const w = WEEKS.find((x) => x.n === week);
+  const w = periodsFor(kind).find((x) => x.n === n);
   const member = members.find((m) => m.name === person);
   if (!w || !member) return renderNotFound(view);
 
@@ -326,7 +347,8 @@ function renderEntry(week, person) {
   `;
 
   if (entryUnsub) entryUnsub();
-  entryUnsub = store.subscribeEntry(week, person, (entry) => {
+  const subscribeFn = kind === "month" ? store.subscribeMonthEntry : store.subscribeEntry;
+  entryUnsub = subscribeFn(n, person, (entry) => {
     draft = {
       keep: entry?.keep || "",
       problem: entry?.problem || "",
@@ -335,13 +357,13 @@ function renderEntry(week, person) {
       updatedAt: entry?.updatedAt || null,
     };
     dirty = false;
-    renderEntryBody(week, person, isOwner);
+    renderEntryBody(kind, n, person, isOwner);
   });
 
   if (commentsUnsub) commentsUnsub();
-  commentsUnsub = store.subscribeComments(entryId(week, person), (list) => {
+  commentsUnsub = store.subscribeComments(entryKey(kind, n, person), (list) => {
     comments = list;
-    renderComments(week, person, isOwner);
+    renderComments(kind, n, person, isOwner);
   });
 }
 
@@ -359,7 +381,7 @@ const KPT_FIELDS = [
   { key: "try", title: "Try", desc: "시도한 일" },
 ];
 
-function renderEntryBody(week, person, isOwner) {
+function renderEntryBody(kind, n, person, isOwner) {
   const dateLine = document.getElementById("date-line");
   const contentEl = document.getElementById("entry-content");
   const photoGrid = document.getElementById("photo-grid");
@@ -396,7 +418,7 @@ function renderEntryBody(week, person, isOwner) {
   fillPhotoGrid(photoGrid, isOwner);
 
   if (isOwner) {
-    document.getElementById("save-btn").addEventListener("click", () => doSave(week, person));
+    document.getElementById("save-btn").addEventListener("click", () => doSave(kind, n, person));
     updateSaveStatus();
   }
 }
@@ -546,12 +568,13 @@ function updateSaveStatus() {
   el.innerHTML = dirty ? '<span class="unsaved-dot"></span> 저장 안 된 변경사항이 있어요' : "";
 }
 
-async function doSave(week, person) {
+async function doSave(kind, n, person) {
   const btn = document.getElementById("save-btn");
   btn.disabled = true;
   btn.textContent = "저장 중...";
   try {
-    await store.saveEntry(week, person, {
+    const saveFn = kind === "month" ? store.saveMonthEntry : store.saveEntry;
+    await saveFn(n, person, {
       keep: draft.keep,
       problem: draft.problem,
       try: draft.try,
@@ -574,7 +597,7 @@ async function doSave(week, person) {
 // ---------------------------------------------------------------------------
 // Comments (댓글 + 대댓글, 1단계 답글까지)
 // ---------------------------------------------------------------------------
-function renderComments(week, person, isOwner) {
+function renderComments(kind, n, person, isOwner) {
   const section = document.getElementById("comments-section");
   if (!section) return;
 
@@ -656,7 +679,7 @@ function renderComments(week, person, isOwner) {
     document.getElementById("submit-comment-btn").addEventListener("click", async () => {
       const content = input.value.trim();
       if (!content) return;
-      await store.addComment(entryId(week, person), { author: session.name, content, parentId: null });
+      await store.addComment(entryKey(kind, n, person), { author: session.name, content, parentId: null });
       input.value = "";
       input.classList.remove("is-dirty");
     });
@@ -688,7 +711,7 @@ function renderComments(week, person, isOwner) {
       const textarea = form.querySelector("textarea");
       const content = textarea.value.trim();
       if (!content) return;
-      await store.addComment(entryId(week, person), { author: session.name, content, parentId });
+      await store.addComment(entryKey(kind, n, person), { author: session.name, content, parentId });
       textarea.value = "";
       textarea.classList.remove("is-dirty");
       form.hidden = true;
@@ -698,13 +721,13 @@ function renderComments(week, person, isOwner) {
   section.querySelectorAll("[data-edit-comment]").forEach((btn) => {
     btn.addEventListener("click", () => {
       editingCommentId = btn.dataset.editComment;
-      renderComments(week, person, isOwner);
+      renderComments(kind, n, person, isOwner);
     });
   });
   section.querySelectorAll("[data-cancel-edit]").forEach((btn) => {
     btn.addEventListener("click", () => {
       editingCommentId = null;
-      renderComments(week, person, isOwner);
+      renderComments(kind, n, person, isOwner);
     });
   });
   section.querySelectorAll("[data-save-edit]").forEach((btn) => {

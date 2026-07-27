@@ -47,33 +47,10 @@ export function mountBuilder(container, store) {
           </div>
           <ul class="post-list" id="post-list"></ul>
         </aside>
-        <section class="pane pane-editor" id="pane-editor"></section>
-        <section class="pane pane-preview" id="pane-preview">
-          <div class="pane-head" title="저장하면 미리보기에 반영돼요"><span>미리보기</span></div>
-          <iframe id="preview-frame" class="preview-frame" title="단체 회고록 미리보기"></iframe>
-        </section>
+        <section class="pane pane-editor pane-editor-full" id="pane-editor"></section>
       </div>
     `;
     document.getElementById("new-post-btn").addEventListener("click", () => selectPost(null));
-  }
-
-  // 미리보기는 목업이 아니라 실제 <단체 회고록> 사이트(../index.html)를 그대로
-  // iframe으로 띄워요 — 사이드바, 주차 폴더, 팀원 폴더까지 전부 진짜 화면 그대로
-  // 보여요. 다만 실시간 데이터에 연결돼 있어서 "저장"한 뒤에 반영됩니다.
-  function showPreview(id) {
-    const frame = document.getElementById("preview-frame");
-    if (!frame) return;
-    const hash = id ? `#/notice/${encodeURIComponent(id)}` : "#/";
-    if (frame.dataset.loaded === "true") {
-      try {
-        frame.contentWindow.location.hash = hash;
-        return;
-      } catch {
-        // 접근 실패 시(드묾) 그냥 새로 불러옵니다.
-      }
-    }
-    frame.dataset.loaded = "true";
-    frame.src = `../index.html${hash}`;
   }
 
   function docIcon() {
@@ -125,7 +102,6 @@ export function mountBuilder(container, store) {
     dirty = false;
     renderList();
     renderEditor();
-    showPreview(id);
   }
 
   function markDirty() {
@@ -336,7 +312,6 @@ export function mountBuilder(container, store) {
       selectedId = newId;
       dirty = false;
       renderEditor();
-      showPreview(newId);
     } catch (err) {
       console.error(err);
       await showAlert("저장에 실패했어요.");

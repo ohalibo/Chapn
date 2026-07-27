@@ -23,6 +23,7 @@ function createLocalStore() {
     members: new Set(),
     entries: new Set(),
     weeks: new Set(),
+    months: new Set(),
     announcements: new Set(),
     comments: new Set(),
   };
@@ -34,6 +35,7 @@ function createLocalStore() {
         { id: "seed-2", name: "남현아", pin: "2222", color: { h: 340, s: 60, l: 65 }, createdAt: Date.now() - 1000 },
       ],
       weeks: defaultWeeksSeed(),
+      months: [],
       announcements: [
         {
           id: "seed-a1",
@@ -77,6 +79,7 @@ function createLocalStore() {
       if (!raw) throw new Error("empty");
       const data = JSON.parse(raw);
       if (!data.weeks) data.weeks = defaultWeeksSeed();
+      if (!data.months) data.months = [];
       if (!data.announcements) data.announcements = [];
       if (!data.comments) data.comments = [];
       return data;
@@ -170,6 +173,22 @@ function createLocalStore() {
       notify("entries");
     },
 
+    subscribeMonthEntry(month, person, cb) {
+      const id = `m${month}_${person}`;
+      const handler = (data) => cb(data.entries[id] || null);
+      handler(load());
+      listeners.entries.add(handler);
+      return () => listeners.entries.delete(handler);
+    },
+
+    async saveMonthEntry(month, person, entry) {
+      const data = load();
+      const id = `m${month}_${person}`;
+      data.entries[id] = { month, person, ...entry, updatedAt: Date.now() };
+      save(data);
+      notify("entries");
+    },
+
     subscribeAllEntries(cb) {
       const handler = (data) => cb(new Map(Object.entries(data.entries)));
       handler(load());
@@ -202,11 +221,29 @@ function createLocalStore() {
       notify("weeks");
     },
 
-    async seedDefaultWeeks() {
+    subscribeMonths(cb) {
+      const handler = (data) => cb([...data.months].sort((a, b) => a.n - b.n));
+      handler(load());
+      listeners.months.add(handler);
+      return () => listeners.months.delete(handler);
+    },
+
+    async saveMonth(month) {
       const data = load();
-      data.weeks = defaultWeeksSeed();
+      const id = month.id || String(month.n);
+      const idx = data.months.findIndex((m) => m.id === id);
+      const record = { ...month, id };
+      if (idx >= 0) data.months[idx] = record;
+      else data.months.push(record);
       save(data);
-      notify("weeks");
+      notify("months");
+    },
+
+    async deleteMonth(id) {
+      const data = load();
+      data.months = data.months.filter((m) => m.id !== id);
+      save(data);
+      notify("months");
     },
 
     subscribeAnnouncements(cb) {
@@ -319,6 +356,7 @@ async function createFirestoreStore() {
   const membersCol = collection(db, "members");
   const entriesCol = collection(db, "retrospectives");
   const weeksCol = collection(db, "weeks");
+  const monthsCol = collection(db, "months");
   const announcementsCol = collection(db, "announcements");
   const commentsCol = collection(db, "comments");
 
@@ -384,6 +422,22 @@ async function createFirestoreStore() {
       );
     },
 
+    subscribeMonthEntry(month, person, cb) {
+      const id = `m${month}_${person}`;
+      return onSnapshot(doc(db, "retrospectives", id), (snap) => {
+        cb(snap.exists() ? snap.data() : null);
+      });
+    },
+
+    async saveMonthEntry(month, person, entry) {
+      const id = `m${month}_${person}`;
+      await setDoc(
+        doc(db, "retrospectives", id),
+        { month, person, ...entry, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+    },
+
     subscribeAllEntries(cb) {
       return onSnapshot(entriesCol, (snap) => {
         const map = new Map();
@@ -409,14 +463,21 @@ async function createFirestoreStore() {
       await deleteDoc(doc(db, "weeks", id));
     },
 
-    async seedDefaultWeeks() {
-      const weeks = defaultWeeksSeed();
-      await Promise.all(
-        weeks.map((w) => {
-          const { id, ...data } = w;
-          return setDoc(doc(db, "weeks", id), data, { merge: true });
-        })
-      );
+    subscribeMonths(cb) {
+      return onSnapshot(monthsCol, (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => a.n - b.n);
+        cb(list);
+      });
+    },
+
+    async saveMonth(month) {
+      const id = month.id || String(month.n);
+      const { id: _drop, ...data } = month;
+      await setDoc(doc(db, "months", id), data, { merge: true });
+    },
+
+    async deleteMonth(id) {
+      await deleteDoc(doc(db, "months", id));
     },
 
     subscribeAnnouncements(cb) {

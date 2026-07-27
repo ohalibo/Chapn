@@ -13,12 +13,15 @@ const TABS = [
   { key: "members", label: "팀원 관리" },
   { key: "weeks", label: "주차 관리" },
   { key: "progress", label: "주차별 작성 현황" },
+  { key: "months", label: "월 관리" },
+  { key: "monthProgress", label: "월간 작성 현황" },
   { key: "notices", label: "공지 빌더" },
 ];
 
 let store = null;
 let members = [];
 let weeks = [];
+let months = [];
 let allEntries = new Map();
 let activeTab = "members";
 
@@ -143,6 +146,10 @@ async function boot() {
     weeks = list;
     refreshTabData();
   });
+  store.subscribeMonths((list) => {
+    months = list;
+    refreshTabData();
+  });
   store.subscribeAllEntries((map) => {
     allEntries = map;
     refreshTabData();
@@ -156,8 +163,10 @@ function refreshTabData() {
   const main = document.getElementById("main");
   if (!main) return;
   if (activeTab === "members") renderMembersTab(main);
-  else if (activeTab === "weeks") renderWeeksTab(main);
-  else if (activeTab === "progress") renderProgressTab(main);
+  else if (activeTab === "weeks") renderPeriodTab("week", main);
+  else if (activeTab === "progress") renderPeriodProgressTab("week", main);
+  else if (activeTab === "months") renderPeriodTab("month", main);
+  else if (activeTab === "monthProgress") renderPeriodProgressTab("month", main);
 }
 
 function render() {
@@ -190,8 +199,10 @@ function render() {
 
   const main = document.getElementById("main");
   if (activeTab === "members") renderMembersTab(main);
-  else if (activeTab === "weeks") renderWeeksTab(main);
-  else if (activeTab === "progress") renderProgressTab(main);
+  else if (activeTab === "weeks") renderPeriodTab("week", main);
+  else if (activeTab === "progress") renderPeriodProgressTab("week", main);
+  else if (activeTab === "months") renderPeriodTab("month", main);
+  else if (activeTab === "monthProgress") renderPeriodProgressTab("month", main);
   else mountBuilder(main, store);
 }
 
@@ -363,6 +374,7 @@ function createDatePicker(initialISO, onChange) {
         updateTrigger();
         renderCalendar();
         onChange(selected);
+        closePanel(panel);
       });
       grid.appendChild(cell);
     }
@@ -381,6 +393,7 @@ function createDatePicker(initialISO, onChange) {
       updateTrigger();
       renderCalendar();
       onChange(selected);
+      closePanel(panel);
     });
     const clearBtn = document.createElement("button");
     clearBtn.type = "button";
@@ -420,9 +433,8 @@ function renderMembersTab(main) {
       <div class="section-head-row">
         <div>
           <h2 class="section-title">팀원 & 입장 번호</h2>
-          <p class="section-sub">이름·PIN·폴더 색상을 자유롭게 바꿀 수 있어요. 폴더 색상은 단체 회고록의 개인 폴더 아이콘 색이 됩니다.</p>
+          <p class="section-sub">이름·PIN·폴더 색상을 자유롭게 바꿀 수 있어요. 입력 후 다른 곳을 클릭하면 자동 저장돼요.</p>
         </div>
-        <button class="btn btn-accent btn-sm" id="apply-members-btn">변경사항 적용</button>
       </div>
       <table class="data-table">
         <thead><tr><th>이름</th><th>PIN</th><th>색상</th><th></th></tr></thead>
@@ -449,7 +461,6 @@ function renderMembersTab(main) {
     </div>
   `;
 
-  const rowRefs = [];
   const rows = document.getElementById("member-rows");
   members.forEach((m) => {
     const tr = document.createElement("tr");
@@ -457,6 +468,12 @@ function renderMembersTab(main) {
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.value = m.name;
+    nameInput.addEventListener("blur", async () => {
+      const val = nameInput.value.trim();
+      if (!val) { nameInput.value = m.name; return; }
+      if (val === m.name) return;
+      await store.updateMember(m.id, { name: val });
+    });
     const tdName = document.createElement("td");
     tdName.appendChild(nameInput);
 
@@ -466,6 +483,20 @@ function renderMembersTab(main) {
     pinInput.inputMode = "numeric";
     pinInput.value = m.pin;
     pinInput.style.width = "60px";
+    pinInput.addEventListener("blur", async () => {
+      const val = pinInput.value.trim();
+      if (val === m.pin) return;
+      if (!/^\d{4}$/.test(val)) {
+        await showAlert("PIN은 숫자 4자리여야 해요.");
+        pinInput.value = m.pin;
+        return;
+      }
+      const result = await store.updateMember(m.id, { pin: val });
+      if (!result.ok) {
+        await showAlert(result.error);
+        pinInput.value = m.pin;
+      }
+    });
     const tdPin = document.createElement("td");
     tdPin.appendChild(pinInput);
 
@@ -489,39 +520,6 @@ function renderMembersTab(main) {
 
     tr.append(tdName, tdPin, tdColor, tdActions);
     rows.appendChild(tr);
-    rowRefs.push({ member: m, nameInput, pinInput });
-  });
-
-  document.getElementById("apply-members-btn").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    const changed = rowRefs.filter(
-      ({ member, nameInput, pinInput }) =>
-        nameInput.value.trim() !== member.name || pinInput.value.trim() !== member.pin
-    );
-    if (changed.length === 0) return;
-    for (const { nameInput, pinInput } of changed) {
-      if (!nameInput.value.trim() || !/^\d{4}$/.test(pinInput.value.trim())) {
-        await showAlert("이름과 4자리 PIN을 확인해주세요.");
-        return;
-      }
-    }
-    btn.disabled = true;
-    btn.textContent = "적용 중...";
-    try {
-      for (const { member, nameInput, pinInput } of changed) {
-        const result = await store.updateMember(member.id, {
-          name: nameInput.value.trim(),
-          pin: pinInput.value.trim(),
-        });
-        if (!result.ok) {
-          await showAlert(`${member.name}: ${result.error}`);
-          break;
-        }
-      }
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "변경사항 적용";
-    }
   });
 
   document.getElementById("random-pin-btn").addEventListener("click", () => {
@@ -549,29 +547,43 @@ function renderMembersTab(main) {
 }
 
 // ---------------------------------------------------------------------------
-// 주차별 작성 현황
+// 주차 관리 / 월 관리 (동일한 규칙, kind로만 구분)
 // ---------------------------------------------------------------------------
-function renderProgressTab(main) {
+function periodConfig(kind) {
+  if (kind === "month") {
+    return { unitLabel: "월", periods: months, idPrefix: "m", saveMethod: "saveMonth", deleteMethod: "deleteMonth" };
+  }
+  return { unitLabel: "주차", periods: weeks, idPrefix: "w", saveMethod: "saveWeek", deleteMethod: "deleteWeek" };
+}
+
+function nextPeriodNumber(periods) {
+  return periods.reduce((max, p) => Math.max(max, p.n), 0) + 1;
+}
+
+function renderPeriodProgressTab(kind, main) {
+  const cfg = periodConfig(kind);
   main.innerHTML = `
     <div class="section-card">
-      <h2 class="section-title">주차별 작성 현황</h2>
-      <p class="section-sub">주차 기간 안에 회고를 작성하면 표시돼요. 안 했으면 공란이에요.</p>
-      <div class="progress-scroll">${renderProgressTable()}</div>
+      <h2 class="section-title">${cfg.unitLabel}별 작성 현황</h2>
+      <p class="section-sub">${cfg.unitLabel} 기간 안에 회고를 작성하면 표시돼요. 안 했으면 공란이에요.</p>
+      <div class="progress-scroll">${renderPeriodProgressTable(kind)}</div>
     </div>
   `;
 }
 
-function renderProgressTable() {
-  if (members.length === 0 || weeks.length === 0) {
-    return '<p class="empty-state">팀원과 주차를 먼저 등록해주세요.</p>';
+function renderPeriodProgressTable(kind) {
+  const cfg = periodConfig(kind);
+  const periods = cfg.periods;
+  if (members.length === 0 || periods.length === 0) {
+    return `<p class="empty-state">팀원과 ${cfg.unitLabel}를 먼저 등록해주세요.</p>`;
   }
-  const header = `<tr><th>이름</th>${weeks.map((w) => `<th>${esc(w.label)}</th>`).join("")}</tr>`;
+  const header = `<tr><th>이름</th>${periods.map((p) => `<th>${esc(p.label)}</th>`).join("")}</tr>`;
   const rows = members
     .map((m) => {
-      const cells = weeks
-        .map((w) => {
-          const e = allEntries.get(`w${w.n}_${m.name}`);
-          const done = !!(e && e.content && e.content.trim());
+      const cells = periods
+        .map((p) => {
+          const e = allEntries.get(`${cfg.idPrefix}${p.n}_${m.name}`);
+          const done = !!(e && ((e.keep && e.keep.trim()) || (e.problem && e.problem.trim()) || (e.try && e.try.trim())));
           return `<td>${done ? '<span class="progress-dot"></span>' : ""}</td>`;
         })
         .join("");
@@ -581,71 +593,71 @@ function renderProgressTable() {
   return `<table>${header}${rows}</table>`;
 }
 
-// ---------------------------------------------------------------------------
-// 주차 관리
-// ---------------------------------------------------------------------------
-function renderWeeksTab(main) {
+function renderPeriodTab(kind, main) {
   clearAllPanels();
+  const cfg = periodConfig(kind);
+  const periods = cfg.periods;
+  const nextN = nextPeriodNumber(periods);
   main.innerHTML = `
     <div class="section-card">
       <div class="section-head-row">
         <div>
-          <h2 class="section-title">주차별 날짜</h2>
-          <p class="section-sub">각 주차의 이름과 시작/종료일을 자유롭게 바꿀 수 있어요.</p>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class="text-btn text-btn-sm" id="seed-default-btn">기본값(12주)으로 채우기</button>
-          <button class="btn btn-accent btn-sm" id="apply-weeks-btn">변경사항 적용</button>
+          <h2 class="section-title">${cfg.unitLabel}별 날짜</h2>
+          <p class="section-sub">각 ${cfg.unitLabel}의 이름과 시작/종료일을 자유롭게 바꿀 수 있어요. 입력 후 다른 곳을 클릭하면 자동 저장돼요.</p>
         </div>
       </div>
       <table class="data-table">
-        <thead><tr><th>주차</th><th>이름</th><th>시작일</th><th>종료일</th><th></th></tr></thead>
-        <tbody id="week-rows"></tbody>
+        <thead><tr><th>${cfg.unitLabel}</th><th>이름</th><th>시작일</th><th>종료일</th><th></th></tr></thead>
+        <tbody id="period-rows"></tbody>
       </table>
-      ${weeks.length === 0 ? '<p class="empty-state">아직 등록된 주차가 없어요. "기본값으로 채우기"를 누르거나 아래에서 추가해보세요.</p>' : ""}
-      <form class="inline-form" id="add-week-form" novalidate>
+      ${periods.length === 0 ? `<p class="empty-state">아직 등록된 ${cfg.unitLabel}가 없어요. 아래에서 추가해보세요.</p>` : ""}
+      <form class="inline-form" id="add-period-form" novalidate>
         <div class="field">
-          <label class="field-label" for="add-week-n">주차 번호</label>
-          <input type="text" id="add-week-n" inputmode="numeric" style="width:70px" placeholder="${nextWeekNumber()}" />
+          <label class="field-label" for="add-period-n">${cfg.unitLabel} 번호</label>
+          <input type="text" id="add-period-n" inputmode="numeric" style="width:70px" placeholder="${nextN}" />
         </div>
         <div class="field">
-          <label class="field-label" for="add-week-label">이름</label>
-          <input type="text" id="add-week-label" placeholder="${nextWeekNumber()}주차" style="width:110px" />
+          <label class="field-label" for="add-period-label">이름</label>
+          <input type="text" id="add-period-label" placeholder="${nextN}${cfg.unitLabel}" style="width:110px" />
         </div>
         <div class="field">
           <label class="field-label">시작일</label>
-          <div id="add-week-start-slot"></div>
+          <div id="add-period-start-slot"></div>
         </div>
         <div class="field">
           <label class="field-label">종료일</label>
-          <div id="add-week-end-slot"></div>
+          <div id="add-period-end-slot"></div>
         </div>
         <button type="submit" class="btn btn-accent">추가</button>
-        <span class="form-error" id="add-week-error"></span>
+        <span class="form-error" id="add-period-error"></span>
       </form>
     </div>
   `;
 
-  document.getElementById("seed-default-btn").addEventListener("click", async () => {
-    const ok = await showConfirm("현재 주차 설정을 기본값(7/1부터 12주)으로 덮어쓸까요?");
-    if (ok) {
-      await store.seedDefaultWeeks();
-    }
-  });
-
-  const rowRefs = [];
-  const rows = document.getElementById("week-rows");
-  weeks.forEach((w) => {
+  const rows = document.getElementById("period-rows");
+  periods.forEach((p) => {
     const tr = document.createElement("tr");
     const labelInput = document.createElement("input");
     labelInput.type = "text";
-    labelInput.value = w.label;
+    labelInput.value = p.label;
+    labelInput.addEventListener("blur", async () => {
+      const val = labelInput.value.trim();
+      if (!val) { labelInput.value = p.label; return; }
+      if (val === p.label) return;
+      await store[cfg.saveMethod]({ id: p.id, n: p.n, label: val, start: p.start, end: p.end });
+    });
 
-    const startPicker = createDatePicker(w.start, () => {});
-    const endPicker = createDatePicker(w.end, () => {});
+    const startPicker = createDatePicker(p.start, async (val) => {
+      if (!val || val === p.start) return;
+      await store[cfg.saveMethod]({ id: p.id, n: p.n, label: labelInput.value.trim() || p.label, start: val, end: p.end });
+    });
+    const endPicker = createDatePicker(p.end, async (val) => {
+      if (!val || val === p.end) return;
+      await store[cfg.saveMethod]({ id: p.id, n: p.n, label: labelInput.value.trim() || p.label, start: p.start, end: val });
+    });
 
     const tdN = document.createElement("td");
-    tdN.textContent = w.n;
+    tdN.textContent = p.n;
     const tdLabel = document.createElement("td");
     tdLabel.appendChild(labelInput);
     const tdStart = document.createElement("td");
@@ -658,68 +670,35 @@ function renderWeeksTab(main) {
     delBtn.className = "text-btn text-btn-danger text-btn-sm";
     delBtn.textContent = "삭제";
     delBtn.addEventListener("click", async () => {
-      const ok = await showConfirm(`${w.label}를 삭제할까요? 이미 작성된 회고 내용은 그대로 남아요.`, { danger: true });
+      const ok = await showConfirm(`${p.label}를 삭제할까요? 이미 작성된 회고 내용은 그대로 남아요.`, { danger: true });
       if (ok) {
-        await store.deleteWeek(w.id);
+        await store[cfg.deleteMethod](p.id);
       }
     });
     tdActions.appendChild(delBtn);
 
     tr.append(tdN, tdLabel, tdStart, tdEnd, tdActions);
     rows.appendChild(tr);
-    rowRefs.push({ week: w, labelInput, startPicker, endPicker });
-  });
-
-  document.getElementById("apply-weeks-btn").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    const changed = rowRefs.filter(({ week, labelInput, startPicker, endPicker }) => {
-      return (
-        labelInput.value.trim() !== week.label ||
-        startPicker.getValue() !== week.start ||
-        endPicker.getValue() !== week.end
-      );
-    });
-    if (changed.length === 0) return;
-    btn.disabled = true;
-    btn.textContent = "적용 중...";
-    try {
-      for (const { week, labelInput, startPicker, endPicker } of changed) {
-        await store.saveWeek({
-          id: week.id,
-          n: week.n,
-          label: labelInput.value.trim() || week.label,
-          start: startPicker.getValue() || week.start,
-          end: endPicker.getValue() || week.end,
-        });
-      }
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "변경사항 적용";
-    }
   });
 
   const addStartPicker = createDatePicker(null, () => {});
   const addEndPicker = createDatePicker(null, () => {});
-  document.getElementById("add-week-start-slot").appendChild(addStartPicker.el);
-  document.getElementById("add-week-end-slot").appendChild(addEndPicker.el);
+  document.getElementById("add-period-start-slot").appendChild(addStartPicker.el);
+  document.getElementById("add-period-end-slot").appendChild(addEndPicker.el);
 
-  document.getElementById("add-week-form").addEventListener("submit", async (e) => {
+  document.getElementById("add-period-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const errorEl = document.getElementById("add-week-error");
+    const errorEl = document.getElementById("add-period-error");
     errorEl.textContent = "";
-    const nRaw = document.getElementById("add-week-n").value.trim();
-    const n = nRaw ? Number(nRaw) : nextWeekNumber();
-    const label = document.getElementById("add-week-label").value.trim() || `${n}주차`;
+    const nRaw = document.getElementById("add-period-n").value.trim();
+    const n = nRaw ? Number(nRaw) : nextN;
+    const label = document.getElementById("add-period-label").value.trim() || `${n}${cfg.unitLabel}`;
     const start = addStartPicker.getValue();
     const end = addEndPicker.getValue();
-    if (!Number.isFinite(n) || n <= 0) { errorEl.textContent = "주차 번호를 확인해주세요."; return; }
+    if (!Number.isFinite(n) || n <= 0) { errorEl.textContent = `${cfg.unitLabel} 번호를 확인해주세요.`; return; }
     if (!start || !end) { errorEl.textContent = "시작일/종료일을 선택해주세요."; return; }
-    if (weeks.some((w) => w.n === n)) { errorEl.textContent = "이미 있는 주차 번호예요."; return; }
-    await store.saveWeek({ id: String(n), n, label, start, end });
+    if (periods.some((p) => p.n === n)) { errorEl.textContent = `이미 있는 ${cfg.unitLabel} 번호예요.`; return; }
+    await store[cfg.saveMethod]({ id: String(n), n, label, start, end });
     e.target.reset();
   });
-}
-
-function nextWeekNumber() {
-  return weeks.reduce((max, w) => Math.max(max, w.n), 0) + 1;
 }
