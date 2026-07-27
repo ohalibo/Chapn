@@ -142,7 +142,8 @@ service cloud.firestore {
 
 **`announcements`** — 공지 한 건당 문서 하나: `title`(string), `blocks`(array,
 각 항목은 `{type:'text', content}` 또는 `{type:'image', src, caption}`),
-`createdAt`/`updatedAt`(timestamp)
+`month`(number 또는 null — null/미설정이면 전체 공지로 Overview에 노출,
+값이 있으면 해당 월 페이지 상단에만 노출), `createdAt`/`updatedAt`(timestamp)
 
 이 구조는 `store.js` 하나에 다 구현되어 있고, 공개 사이트(`app.js`)와
 관리자 빌더(`admin/app.js`, `admin/builder.js`) 둘 다 같은 `store.js`를

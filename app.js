@@ -141,7 +141,7 @@ function folderIcon(color) {
   const bodyLight = hslToHex(h, s, clamp(l + 12, 0, 90));
   const bodyDark = hslToHex(h, s, clamp(l - 12, 8, 100));
   const glyph = hslToHex(h, s, clamp(l - 22, 5, 100));
-  return `<svg viewBox="0 0 68 54" xmlns="http://www.w3.org/2000/svg">
+  return `<svg viewBox="0 0 68 54" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="${uid}Tab" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${tabLight}"/><stop offset="1" stop-color="${tabDark}"/>
@@ -190,11 +190,15 @@ function render() {
   root.innerHTML = `
     <div class="cargo-window">
       <div class="cargo-titlebar">
+        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="메뉴 열기">
+          <svg viewBox="0 0 20 16" width="18" height="14"><path d="M0 1h20M0 8h20M0 15h20" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
         <span class="tl-dot red"></span><span class="tl-dot yellow"></span><span class="tl-dot green"></span>
         <span class="cargo-title">챕터엔 회고록</span>
       </div>
       <div class="cargo-body">
-        <aside class="cargo-sidebar">
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+        <aside class="cargo-sidebar" id="cargo-sidebar">
           <div class="sb-session">
             <span class="sb-session-name">${esc(session.name)}님</span>
             <button class="sb-session-logout" id="logout-btn">나가기</button>
@@ -223,8 +227,23 @@ function render() {
     </div>
   `;
 
+  const sidebarEl = document.getElementById("cargo-sidebar");
+  const backdropEl = document.getElementById("sidebar-backdrop");
+  function closeMobileSidebar() {
+    sidebarEl.classList.remove("mobile-open");
+    backdropEl.classList.remove("visible");
+  }
+  document.getElementById("mobile-menu-btn").addEventListener("click", () => {
+    sidebarEl.classList.toggle("mobile-open");
+    backdropEl.classList.toggle("visible");
+  });
+  backdropEl.addEventListener("click", closeMobileSidebar);
+
   root.querySelectorAll(".sb-item[data-hash]").forEach((el) => {
-    el.addEventListener("click", () => go(el.dataset.hash));
+    el.addEventListener("click", () => {
+      closeMobileSidebar();
+      go(el.dataset.hash);
+    });
   });
   document.getElementById("logout-btn").addEventListener("click", () => {
     session = null;
@@ -257,12 +276,13 @@ function periodFolderTiles(kind, periods) {
 
 function renderWeeks() {
   const view = document.getElementById("view");
-  if (WEEKS.length === 0 && MONTHS.length === 0 && announcements.length === 0) {
+  const globalNotices = announcements.filter((a) => !a.month);
+  if (WEEKS.length === 0 && MONTHS.length === 0 && globalNotices.length === 0) {
     view.innerHTML = `<div class="empty-state">아직 등록된 주차/월간이 없어요. 운영진에게 문의해주세요.</div>`;
     return;
   }
 
-  const noticeTiles = announcements.map((a) => `
+  const noticeTiles = globalNotices.map((a) => `
     <button class="file-tile" data-hash="#/notice/${encodeURIComponent(a.id)}">
       ${documentIcon()}
       <span class="ft-label">${esc(a.title || "제목 없음")}</span>
@@ -270,7 +290,7 @@ function renderWeeks() {
   `).join("");
 
   view.innerHTML = `
-    ${announcements.length > 0 ? `<div class="file-grid">${noticeTiles}</div><hr class="section-divider" />` : ""}
+    ${globalNotices.length > 0 ? `<div class="file-grid">${noticeTiles}</div><hr class="section-divider" />` : ""}
     ${WEEKS.length > 0 ? `<div class="folder-grid">${periodFolderTiles("week", WEEKS)}</div>` : ""}
     ${MONTHS.length > 0 ? `${WEEKS.length > 0 ? '<hr class="section-divider" />' : ""}<div class="folder-grid">${periodFolderTiles("month", MONTHS)}</div>` : ""}
   `;
@@ -305,8 +325,19 @@ function renderPeople(kind, n) {
     `;
   }).join("");
 
-  view.innerHTML = `<div class="folder-grid">${tiles}</div>`;
-  view.querySelectorAll(".folder-tile").forEach((el) => {
+  const monthNotices = kind === "month" ? announcements.filter((a) => a.month === n) : [];
+  const noticeTiles = monthNotices.map((a) => `
+    <button class="file-tile" data-hash="#/notice/${encodeURIComponent(a.id)}">
+      ${documentIcon()}
+      <span class="ft-label">${esc(a.title || "제목 없음")}</span>
+    </button>
+  `).join("");
+
+  view.innerHTML = `
+    ${monthNotices.length > 0 ? `<div class="file-grid">${noticeTiles}</div><hr class="section-divider" />` : ""}
+    <div class="folder-grid">${tiles}</div>
+  `;
+  view.querySelectorAll(".folder-tile, .file-tile").forEach((el) => {
     el.addEventListener("click", () => go(el.dataset.hash));
   });
 }
@@ -381,6 +412,12 @@ const KPT_FIELDS = [
   { key: "try", title: "Try", desc: "시도한 일" },
 ];
 
+// 내용이 있고(저장된 값과 일치해서) "정리된" 상태일 때만 테두리를 없애요.
+// 비어 있거나 아직 저장 안 한 상태에는 어디를 눌러야 할지 보이도록 테두리를 유지합니다.
+function applyFieldCleanState(textarea, value) {
+  textarea.classList.toggle("is-clean", !!(value && value.trim()));
+}
+
 function renderEntryBody(kind, n, person, isOwner) {
   const dateLine = document.getElementById("date-line");
   const contentEl = document.getElementById("entry-content");
@@ -407,9 +444,10 @@ function renderEntryBody(kind, n, person, isOwner) {
     KPT_FIELDS.forEach((f) => {
       const textarea = document.getElementById(`kpt-${f.key}`);
       textarea.value = draft[f.key];
+      applyFieldCleanState(textarea, draft[f.key]);
       textarea.addEventListener("input", (e) => {
         draft[f.key] = e.target.value;
-        e.target.classList.add("is-dirty");
+        e.target.classList.remove("is-clean");
         markDirty();
       });
     });
@@ -583,7 +621,8 @@ async function doSave(kind, n, person) {
     dirty = false;
     updateSaveStatus();
     KPT_FIELDS.forEach((f) => {
-      document.getElementById(`kpt-${f.key}`)?.classList.remove("is-dirty");
+      const textarea = document.getElementById(`kpt-${f.key}`);
+      if (textarea) applyFieldCleanState(textarea, draft[f.key]);
     });
   } catch (err) {
     console.error(err);
@@ -751,21 +790,45 @@ function renderComments(kind, n, person, isOwner) {
 // ---------------------------------------------------------------------------
 // View: notice (read-only announcement post)
 // ---------------------------------------------------------------------------
+function groupNoticeBlocks(blocks) {
+  const groups = [];
+  let imgGroup = null;
+  (blocks || []).forEach((b) => {
+    if (b.type === "image") {
+      if (!imgGroup) {
+        imgGroup = [];
+        groups.push({ type: "images", items: imgGroup });
+      }
+      imgGroup.push(b);
+    } else {
+      imgGroup = null;
+      groups.push({ type: "text", content: b.content });
+    }
+  });
+  return groups;
+}
+
 function renderNotice(id) {
   const view = document.getElementById("view");
   const notice = announcements.find((a) => a.id === id);
   if (!notice) return renderNotFound(view);
 
-  const blocksHtml = (notice.blocks || [])
-    .map((b) => {
-      if (b.type === "image") {
-        return `
-          <div class="notice-block notice-block-image">
-            <img src="${b.src}" alt="${esc(b.caption || "공지 사진")}" />
+  const groups = groupNoticeBlocks(notice.blocks);
+  const blocksHtml = groups
+    .map((g) => {
+      if (g.type === "images") {
+        const cards = g.items
+          .map(
+            (b, i) => `
+          <div class="photo-card">
+            <div class="photo-thumb"><img src="${b.src}" alt="${esc(b.caption || "공지 사진")}" /></div>
             ${b.caption ? `<div class="photo-caption">${esc(b.caption)}</div>` : ""}
-          </div>`;
+          </div>`
+          )
+          .join("");
+        return `<div class="photo-grid">${cards}</div>`;
       }
-      return `<div class="notice-block notice-block-text">${esc(b.content || "")}</div>`;
+      return `<div class="notice-block notice-block-text">${esc(g.content || "")}</div>`;
     })
     .join("");
 
@@ -774,6 +837,11 @@ function renderNotice(id) {
     <div class="notice-date">${formatDateTime(notice.createdAt)} 작성</div>
     <div class="notice-body">${blocksHtml || '<p class="ft-meta">내용이 없어요.</p>'}</div>
   `;
+
+  const flatImages = groups.filter((g) => g.type === "images").flatMap((g) => g.items);
+  view.querySelectorAll(".notice-body .photo-thumb img").forEach((img, i) => {
+    img.addEventListener("click", () => openLightbox(flatImages[i].src, flatImages[i].caption));
+  });
 }
 
 // ---------------------------------------------------------------------------

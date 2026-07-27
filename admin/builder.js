@@ -6,8 +6,9 @@ import { showAlert, showConfirm } from "./ui.js";
 
 export function mountBuilder(container, store) {
   let announcements = [];
+  let months = [];
   let selectedId = null; // null = 아직 저장 안 한 새 글
-  let draft = null; // { title, blocks: [{type:'text',content} | {type:'image',src,caption}] }
+  let draft = null; // { title, blocks: [...], month: number|null (null = 전체 공지) }
   let dirty = false;
   let initialized = false;
 
@@ -21,11 +22,28 @@ export function mountBuilder(container, store) {
       renderList();
     }
   });
+  store.subscribeMonths((list) => {
+    months = list;
+    // 편집 중인 글이 없을 때만 다시 그려서, 작성 중인 내용이 날아가지 않게 해요.
+    if (document.getElementById("notice-month-select")) renderMonthOptions();
+  });
 
   function esc(str) {
     return String(str ?? "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
+  }
+
+  function renderMonthOptions() {
+    const select = document.getElementById("notice-month-select");
+    if (!select) return;
+    if (months.length === 0) {
+      select.innerHTML = '<option value="">등록된 월이 없어요</option>';
+      return;
+    }
+    select.innerHTML =
+      '<option value="">월 선택</option>' +
+      months.map((m) => `<option value="${m.n}" ${draft.month === m.n ? "selected" : ""}>${esc(m.label)}</option>`).join("");
   }
 
   function formatDate(ts) {
@@ -71,16 +89,17 @@ export function mountBuilder(container, store) {
       return;
     }
     listEl.innerHTML = announcements
-      .map(
-        (a) => `
+      .map((a) => {
+        const scopeLabel = a.month ? months.find((m) => m.n === a.month)?.label || `${a.month}월` : "전체";
+        return `
       <li data-id="${a.id}" class="${selectedId === a.id ? "active" : ""}">
         ${docIcon()}
         <div class="pl-text">
           <div class="pl-title">${esc(a.title || "제목 없음")}</div>
-          <div class="pl-meta">${formatDate(a.updatedAt)}</div>
+          <div class="pl-meta">${formatDate(a.updatedAt)} · ${esc(scopeLabel)}</div>
         </div>
-      </li>`
-      )
+      </li>`;
+      })
       .join("");
     listEl.querySelectorAll("li").forEach((li) => {
       li.addEventListener("click", () => selectPost(li.dataset.id));
@@ -94,10 +113,10 @@ export function mountBuilder(container, store) {
     }
     selectedId = id;
     if (id === null) {
-      draft = { title: "", blocks: [] };
+      draft = { title: "", blocks: [], month: null };
     } else {
       const a = announcements.find((x) => x.id === id);
-      draft = { title: a?.title || "", blocks: (a?.blocks || []).map((b) => ({ ...b })) };
+      draft = { title: a?.title || "", blocks: (a?.blocks || []).map((b) => ({ ...b })), month: a?.month ?? null };
     }
     dirty = false;
     renderList();
@@ -124,6 +143,15 @@ export function mountBuilder(container, store) {
           <input type="text" id="post-title" placeholder="공지 제목" />
         </div>
         <div class="field">
+          <label class="field-label">위치</label>
+          <div class="scope-row">
+            <label class="scope-option"><input type="radio" name="notice-scope" value="global" ${!draft.month ? "checked" : ""} /> 전체 공지</label>
+            <label class="scope-option"><input type="radio" name="notice-scope" value="month" ${draft.month ? "checked" : ""} /> 월별 공지</label>
+          </div>
+          <select id="notice-month-select" ${draft.month ? "" : "disabled"}></select>
+          <span class="form-error" id="notice-scope-error"></span>
+        </div>
+        <div class="field">
           <label class="field-label">내용 블록</label>
           <div class="block-list" id="block-list"></div>
           <div class="block-add-row" style="margin-top:10px;">
@@ -147,6 +175,26 @@ export function mountBuilder(container, store) {
     titleInput.value = draft.title;
     titleInput.addEventListener("input", (e) => {
       draft.title = e.target.value;
+      markDirty();
+    });
+
+    renderMonthOptions();
+    pane.querySelectorAll('input[name="notice-scope"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        const monthSelect = document.getElementById("notice-month-select");
+        document.getElementById("notice-scope-error").textContent = "";
+        if (radio.value === "global" && radio.checked) {
+          draft.month = null;
+          monthSelect.disabled = true;
+          monthSelect.value = "";
+        } else if (radio.value === "month" && radio.checked) {
+          monthSelect.disabled = false;
+        }
+        markDirty();
+      });
+    });
+    document.getElementById("notice-month-select").addEventListener("change", (e) => {
+      draft.month = e.target.value ? Number(e.target.value) : null;
       markDirty();
     });
 
@@ -301,6 +349,11 @@ export function mountBuilder(container, store) {
   }
 
   async function savePost() {
+    const monthRadio = document.querySelector('input[name="notice-scope"][value="month"]');
+    if (monthRadio && monthRadio.checked && !draft.month) {
+      document.getElementById("notice-scope-error").textContent = "월을 선택해주세요.";
+      return;
+    }
     const btn = document.getElementById("save-post-btn");
     btn.disabled = true;
     btn.textContent = "저장 중...";
@@ -308,6 +361,7 @@ export function mountBuilder(container, store) {
       const newId = await store.saveAnnouncement(selectedId, {
         title: draft.title,
         blocks: draft.blocks,
+        month: draft.month,
       });
       selectedId = newId;
       dirty = false;
