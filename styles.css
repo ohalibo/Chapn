@@ -472,12 +472,8 @@ button, input, textarea { font-family: inherit; color: inherit; }
 .comment-reply-btn-accent:hover { opacity: 0.75; }
 .comment-reply-btn-danger { color: var(--stamp); }
 .comment-reply-btn-danger:hover { color: var(--stamp); opacity: 0.75; }
-.comment-replies {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 6px;
-  padding-left: 20px;
+.comment-item[data-depth]:not([data-depth="0"]) {
+  padding-left: 14px;
   border-left: 2px solid var(--line);
 }
 .comment-form, .comment-reply-form { display: flex; flex-direction: column; gap: 8px; max-width: 560px; margin-top: 10px; }

@@ -310,7 +310,18 @@ function createLocalStore() {
 
     async deleteComment(id) {
       const data = load();
-      data.comments = data.comments.filter((c) => c.id !== id && c.parentId !== id);
+      const toRemove = new Set([id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const c of data.comments) {
+          if (toRemove.has(c.parentId) && !toRemove.has(c.id)) {
+            toRemove.add(c.id);
+            grew = true;
+          }
+        }
+      }
+      data.comments = data.comments.filter((c) => !toRemove.has(c.id));
       save(data);
       notify("comments");
     },
@@ -529,9 +540,13 @@ async function createFirestoreStore() {
     },
 
     async deleteComment(id) {
-      await deleteDoc(doc(db, "comments", id));
-      const replies = await getDocs(query(commentsCol, where("parentId", "==", id)));
-      await Promise.all(replies.docs.map((d) => deleteDoc(d.ref)));
+      const queue = [id];
+      while (queue.length) {
+        const current = queue.shift();
+        await deleteDoc(doc(db, "comments", current));
+        const replies = await getDocs(query(commentsCol, where("parentId", "==", current)));
+        queue.push(...replies.docs.map((d) => d.id));
+      }
     },
   };
 }

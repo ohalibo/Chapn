@@ -630,20 +630,22 @@ async function doSave(kind, n, person) {
 }
 
 // ---------------------------------------------------------------------------
-// Comments (댓글 + 대댓글, 1단계 답글까지)
+// Comments (댓글 + 대댓글, 무제한 depth)
 // ---------------------------------------------------------------------------
+const COMMENT_MAX_INDENT_DEPTH = 6;
+
 function renderComments(kind, n, person, isOwner) {
   const section = document.getElementById("comments-section");
   if (!section) return;
 
-  const topLevel = comments.filter((c) => !c.parentId);
-  const repliesOf = (id) => comments.filter((c) => c.parentId === id);
+  const childrenOf = (id) => comments.filter((c) => c.parentId === id);
 
-  function commentHtml(c, isReply) {
+  function commentHtml(c, depth) {
     const isMine = c.author === session.name;
+    const indent = Math.min(depth, COMMENT_MAX_INDENT_DEPTH) * 16;
     if (editingCommentId === c.id) {
       return `
-        <div class="comment-item" data-id="${c.id}">
+        <div class="comment-item" data-id="${c.id}" data-depth="${depth}" style="margin-left:${indent}px">
           <div class="comment-head">
             <span class="comment-author">${esc(c.author)}</span>
             <span class="comment-time">${formatDateTime(c.createdAt)}</span>
@@ -659,7 +661,7 @@ function renderComments(kind, n, person, isOwner) {
       `;
     }
     return `
-      <div class="comment-item" data-id="${c.id}">
+      <div class="comment-item" data-id="${c.id}" data-depth="${depth}" style="margin-left:${indent}px">
         <div class="comment-head">
           <span class="comment-author">${esc(c.author)}</span>
           <span class="comment-time">${formatDateTime(c.createdAt)}</span>
@@ -669,16 +671,7 @@ function renderComments(kind, n, person, isOwner) {
           ` : ""}
         </div>
         <div class="comment-body">${esc(c.content)}</div>
-        ${!isReply ? `<button class="comment-reply-btn" data-reply-to="${c.id}">답글</button>` : ""}
-      </div>
-    `;
-  }
-
-  const listHtml = topLevel
-    .map((c) => {
-      const replies = repliesOf(c.id);
-      return `
-        ${commentHtml(c, false)}
+        <button class="comment-reply-btn" data-reply-to="${c.id}">답글</button>
         <div class="comment-reply-form" id="reply-form-${c.id}" hidden>
           <textarea placeholder="답글을 입력하세요"></textarea>
           <div class="comment-form-actions">
@@ -686,10 +679,17 @@ function renderComments(kind, n, person, isOwner) {
             <button class="text-btn text-btn-accent" data-submit-reply="${c.id}">답글 남기기</button>
           </div>
         </div>
-        ${replies.length ? `<div class="comment-replies">${replies.map((r) => commentHtml(r, true)).join("")}</div>` : ""}
-      `;
-    })
-    .join("");
+      </div>
+    `;
+  }
+
+  function threadHtml(c, depth) {
+    const kids = childrenOf(c.id);
+    return commentHtml(c, depth) + kids.map((k) => threadHtml(k, depth + 1)).join("");
+  }
+
+  const topLevel = comments.filter((c) => !c.parentId);
+  const listHtml = topLevel.map((c) => threadHtml(c, 0)).join("");
 
   section.innerHTML = `
     <div class="comments-heading">댓글 ${comments.length > 0 ? comments.length : ""}</div>
