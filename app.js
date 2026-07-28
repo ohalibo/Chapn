@@ -414,6 +414,13 @@ function applyFieldCleanState(textarea, value) {
   textarea.classList.toggle("is-clean", !!(value && value.trim()));
 }
 
+// 내용 길이에 맞춰 textarea 자체 높이를 늘려서, 박스 내부가 아니라
+// 페이지 전체가 스크롤되도록 합니다.
+function autoGrowTextarea(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
 function renderEntryBody(kind, n, person, isOwner) {
   const dateLine = document.getElementById("date-line");
   const contentEl = document.getElementById("entry-content");
@@ -441,10 +448,12 @@ function renderEntryBody(kind, n, person, isOwner) {
       const textarea = document.getElementById(`kpt-${f.key}`);
       textarea.value = draft[f.key];
       applyFieldCleanState(textarea, draft[f.key]);
+      autoGrowTextarea(textarea);
       textarea.addEventListener("input", (e) => {
         draft[f.key] = e.target.value;
         e.target.classList.remove("is-clean");
         markDirty();
+        autoGrowTextarea(e.target);
       });
     });
   }
