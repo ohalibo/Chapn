@@ -380,6 +380,7 @@ function renderEntry(kind, n, person) {
       keep: entry?.keep || "",
       problem: entry?.problem || "",
       try: entry?.try || "",
+      share: entry?.share || "",
       photos: entry?.photos ? entry.photos.map((p) => ({ ...p })) : [],
       updatedAt: entry?.updatedAt || null,
     };
@@ -407,6 +408,16 @@ const KPT_FIELDS = [
   { key: "problem", title: "Problem", desc: "아쉬웠던 일" },
   { key: "try", title: "Try", desc: "시도한 일" },
 ];
+const SHARE_FIELD = { key: "share", title: "Share", desc: "공유하고 싶은 링크" };
+
+function isHttpUrl(str) {
+  try {
+    const u = new URL(str);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 // 내용이 있고(저장된 값과 일치해서) "정리된" 상태일 때만 테두리를 없애요.
 // 비어 있거나 아직 저장 안 한 상태에는 어디를 눌러야 할지 보이도록 테두리를 유지합니다.
@@ -429,21 +440,39 @@ function renderEntryBody(kind, n, person, isOwner) {
   dateLine.textContent = draft.updatedAt ? `작성 시간 ${formatDateTime(draft.updatedAt)}` : "아직 저장 전이에요";
 
   if (!isOwner) {
-    contentEl.innerHTML = KPT_FIELDS.map(
-      (f) => `
+    contentEl.innerHTML =
+      KPT_FIELDS.map(
+        (f) => `
       <div class="kpt-field">
         <div class="kpt-label"><strong>${f.title}</strong><span>${f.desc}</span></div>
         <div class="readonly-content">${draft[f.key] ? esc(draft[f.key]) : "작성하지 않았어요."}</div>
       </div>`
-    ).join("");
+      ).join("") +
+      `
+      <div class="kpt-field">
+        <div class="kpt-label"><strong>${SHARE_FIELD.title}</strong><span>${SHARE_FIELD.desc}</span></div>
+        <div class="readonly-content">${
+          draft.share
+            ? isHttpUrl(draft.share)
+              ? `<a href="${esc(draft.share)}" target="_blank" rel="noopener noreferrer">${esc(draft.share)}</a>`
+              : esc(draft.share)
+            : "작성하지 않았어요."
+        }</div>
+      </div>`;
   } else {
-    contentEl.innerHTML = KPT_FIELDS.map(
-      (f) => `
+    contentEl.innerHTML =
+      KPT_FIELDS.map(
+        (f) => `
       <div class="kpt-field">
         <div class="kpt-label"><strong>${f.title}</strong><span>${f.desc}</span></div>
         <textarea id="kpt-${f.key}"></textarea>
       </div>`
-    ).join("");
+      ).join("") +
+      `
+      <div class="kpt-field">
+        <div class="kpt-label"><strong>${SHARE_FIELD.title}</strong><span>${SHARE_FIELD.desc}</span></div>
+        <input type="url" id="kpt-share" placeholder="https://..." />
+      </div>`;
     KPT_FIELDS.forEach((f) => {
       const textarea = document.getElementById(`kpt-${f.key}`);
       textarea.value = draft[f.key];
@@ -455,6 +484,14 @@ function renderEntryBody(kind, n, person, isOwner) {
         markDirty();
         autoGrowTextarea(e.target);
       });
+    });
+    const shareInput = document.getElementById("kpt-share");
+    shareInput.value = draft.share;
+    applyFieldCleanState(shareInput, draft.share);
+    shareInput.addEventListener("input", (e) => {
+      draft.share = e.target.value;
+      e.target.classList.remove("is-clean");
+      markDirty();
     });
   }
 
@@ -621,6 +658,7 @@ async function doSave(kind, n, person) {
       keep: draft.keep,
       problem: draft.problem,
       try: draft.try,
+      share: draft.share,
       photos: draft.photos,
     });
     dirty = false;
@@ -629,6 +667,8 @@ async function doSave(kind, n, person) {
       const textarea = document.getElementById(`kpt-${f.key}`);
       if (textarea) applyFieldCleanState(textarea, draft[f.key]);
     });
+    const shareInput = document.getElementById("kpt-share");
+    if (shareInput) applyFieldCleanState(shareInput, draft.share);
   } catch (err) {
     console.error(err);
     alert("저장에 실패했어요. 잠시 후 다시 시도해주세요.");

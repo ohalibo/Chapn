@@ -133,6 +133,7 @@ service cloud.firestore {
 `w{주차번호}_{이름}`(예: `w1_김영서`, `week`(number) 필드 포함), 월간 회고는
 `m{월번호}_{이름}`(예: `m1_김영서`, `month`(number) 필드 포함). 공통 필드:
 `person`(string), `keep`/`problem`/`try`(string, 각각 Keep/Problem/Try 칸),
+`share`(string, 공유 링크 칸 — http/https URL이면 열람 화면에서 하이퍼링크로 표시),
 `photos`(array\<{src, caption}\>, src는 base64 data URL), `updatedAt`(timestamp)
 
 **`comments`** — 댓글/답글 한 건당 문서 하나: `entryId`(string, 위
