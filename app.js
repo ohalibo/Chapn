@@ -136,25 +136,22 @@ let iconUidCounter = 0;
 function folderIcon(color) {
   const { h, s, l } = color || DEFAULT_MEMBER_COLOR;
   const uid = `fg${iconUidCounter++}`;
-  const tabLight = hslToHex(h, s, clamp(l + 22, 0, 92));
-  const tabDark = hslToHex(h, s, clamp(l + 6, 0, 88));
-  const bodyLight = hslToHex(h, s, clamp(l + 12, 0, 90));
-  const bodyDark = hslToHex(h, s, clamp(l - 12, 8, 100));
-  const glyph = hslToHex(h, s, clamp(l - 22, 5, 100));
+  const tabColor = hslToHex(h, clamp(s, 40, 75), clamp(l - 6, 45, 62));
+  const bodyTop = hslToHex(h, clamp(s, 40, 75), clamp(l + 14, 62, 78));
+  const bodyBottom = hslToHex(h, clamp(s, 40, 75), clamp(l - 2, 50, 68));
+  const glyph = hslToHex(h, clamp(s - 10, 20, 60), clamp(l - 20, 30, 50));
   return `<svg viewBox="0 0 68 54" xmlns="http://www.w3.org/2000/svg">
     <defs>
-      <linearGradient id="${uid}Tab" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${tabLight}"/><stop offset="1" stop-color="${tabDark}"/>
-      </linearGradient>
       <linearGradient id="${uid}Body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${bodyLight}"/><stop offset="1" stop-color="${bodyDark}"/>
+        <stop offset="0" stop-color="${bodyTop}"/><stop offset="1" stop-color="${bodyBottom}"/>
       </linearGradient>
     </defs>
-    <path d="M2 8a3 3 0 0 1 3-3h15l4 4h39a3 3 0 0 1 3 3v3H2V8Z" fill="url(#${uid}Tab)"/>
-    <path d="M2 11h64v32a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V11Z" fill="url(#${uid}Body)"/>
-    <rect x="21" y="19" width="26" height="18" rx="1.5" fill="#ffffff" opacity="0.5"/>
-    <circle cx="27" cy="25" r="2.1" fill="${glyph}"/>
-    <path d="M23 34l6-7 5 5.5 4-4.5 6 6H23Z" fill="${glyph}"/>
+    <path d="M4 14V9C4 6.24 6.24 4 9 4H20C21.3 4 22.5 4.6 23.3 5.6L26.3 9.6C27.2 10.8 26.9 13 25.3 14Z" fill="${tabColor}"/>
+    <rect x="2" y="13" width="64" height="36" rx="6" fill="url(#${uid}Body)"/>
+    <path d="M5 17Q34 12 63 17V20Q34 16 5 20Z" fill="#ffffff" opacity="0.55"/>
+    <rect x="21" y="23" width="26" height="18" rx="3" fill="#ffffff" opacity="0.18"/>
+    <circle cx="27" cy="29" r="2.3" fill="${glyph}" opacity="0.55"/>
+    <path d="M23 38l7-9 6 6.5 5-5.5 8 8H23Z" fill="${glyph}" opacity="0.55"/>
   </svg>`;
 }
 
