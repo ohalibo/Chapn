@@ -139,19 +139,18 @@ function folderIcon(color) {
   const tabColor = hslToHex(h, clamp(s, 40, 75), clamp(l - 6, 45, 62));
   const bodyTop = hslToHex(h, clamp(s, 40, 75), clamp(l + 14, 62, 78));
   const bodyBottom = hslToHex(h, clamp(s, 40, 75), clamp(l - 2, 50, 68));
-  const glyph = hslToHex(h, clamp(s - 10, 20, 60), clamp(l - 20, 30, 50));
-  return `<svg viewBox="0 0 68 54" xmlns="http://www.w3.org/2000/svg">
+  const glyph = hslToHex(h, clamp(s - 15, 15, 50), clamp(l - 18, 32, 52));
+  return `<svg viewBox="0 0 58 52" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="${uid}Body" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${bodyTop}"/><stop offset="1" stop-color="${bodyBottom}"/>
       </linearGradient>
     </defs>
-    <path d="M4 14V9C4 6.24 6.24 4 9 4H20C21.3 4 22.5 4.6 23.3 5.6L26.3 9.6C27.2 10.8 26.9 13 25.3 14Z" fill="${tabColor}"/>
-    <rect x="2" y="13" width="64" height="36" rx="6" fill="url(#${uid}Body)"/>
-    <path d="M5 17Q34 12 63 17V20Q34 16 5 20Z" fill="#ffffff" opacity="0.55"/>
-    <rect x="21" y="23" width="26" height="18" rx="3" fill="#ffffff" opacity="0.18"/>
-    <circle cx="27" cy="29" r="2.3" fill="${glyph}" opacity="0.55"/>
-    <path d="M23 38l7-9 6 6.5 5-5.5 8 8H23Z" fill="${glyph}" opacity="0.55"/>
+    <path d="M4 14L4 8A3 3 0 0 1 7 5L16 5A2.5 2.5 0 0 1 18.4 7.1L20 8.7A2 2 0 0 1 21.5 11L52 11A1.5 1.5 0 0 1 53.5 12.5L53.5 14Z" fill="${tabColor}"/>
+    <rect x="4" y="13" width="49.5" height="2.5" rx="1.2" fill="#f7fbfe"/>
+    <rect x="4" y="15.5" width="50" height="30.5" rx="5" fill="url(#${uid}Body)"/>
+    <circle cx="24" cy="27" r="2" fill="${glyph}" fill-opacity="0.55"/>
+    <path d="M21 37 27 28 31 33 34 30 39 37Z" fill="${glyph}" fill-opacity="0.55"/>
   </svg>`;
 }
 
