@@ -449,6 +449,107 @@ button, input, textarea { font-family: inherit; color: inherit; }
   padding: 6px;
 }
 
+/* ---------- Photo crop modal ---------- */
+.crop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 15, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  padding: 24px;
+}
+.crop-card {
+  width: min(640px, 100%);
+  max-height: 90vh;
+  background: var(--window-bg);
+  border-radius: 10px;
+  box-shadow: var(--shadow-window);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.crop-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.crop-card-title { font-size: 1rem; font-weight: 700; }
+.crop-card-filename { font-size: 0.76rem; color: var(--ink-muted); margin-top: 2px; }
+.crop-close {
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.crop-close:hover { color: var(--ink); }
+.crop-ratio-row {
+  display: flex;
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.crop-ratio-btn {
+  border: 1px solid var(--line-strong);
+  background: none;
+  color: var(--ink-muted);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.crop-ratio-btn.is-active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.crop-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--sidebar-bg);
+  overflow: auto;
+}
+.crop-image-wrap { position: relative; touch-action: none; }
+.crop-image { display: block; user-select: none; pointer-events: none; }
+.crop-box {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(20, 20, 15, 0.5);
+  border: 1px solid #fff;
+  cursor: move;
+  touch-action: none;
+}
+.crop-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border: 1px solid var(--ink-muted);
+  border-radius: 50%;
+  touch-action: none;
+}
+.crop-handle[data-handle="nw"] { top: -7px; left: -7px; cursor: nwse-resize; }
+.crop-handle[data-handle="ne"] { top: -7px; right: -7px; cursor: nesw-resize; }
+.crop-handle[data-handle="sw"] { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.crop-handle[data-handle="se"] { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.crop-card-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
 /* ---------- Comments ---------- */
 .comments-section {
   margin-top: 40px;

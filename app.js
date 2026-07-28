@@ -565,7 +565,8 @@ function fillPhotoGrid(gridEl, editable) {
       const files = Array.from(fileInput.files || []).slice(0, MAX_PHOTOS - draft.photos.length);
       for (const file of files) {
         try {
-          const dataUrl = await compressImage(file);
+          const dataUrl = await openCropModal(file);
+          if (!dataUrl) continue;
           const currentTotal = draft.photos.reduce((s, p) => s + p.src.length, 0);
           if (currentTotal + dataUrl.length > MAX_PHOTO_BASE64_TOTAL) {
             alert("사진 용량이 너무 커요. 몇 장을 지우고 다시 시도해주세요.");
@@ -615,25 +616,256 @@ function openLightbox(src, caption) {
   document.body.appendChild(overlay);
 }
 
-function compressImage(file) {
+function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
     reader.onload = () => {
       const img = new Image();
       img.onerror = reject;
-      img.onload = () => {
-        const scale = Math.min(1, PHOTO_MAX_WIDTH / img.width);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", PHOTO_JPEG_QUALITY));
-      };
+      img.onload = () => resolve(img);
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
+  });
+}
+
+function cropToCompressedDataUrl(img, sx, sy, sw, sh) {
+  const scale = Math.min(1, PHOTO_MAX_WIDTH / sw);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(sw * scale);
+  canvas.height = Math.round(sh * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", PHOTO_JPEG_QUALITY);
+}
+
+// ---------------------------------------------------------------------------
+// Photo crop modal (자유 / 1:1)
+// ---------------------------------------------------------------------------
+const CROP_HANDLE_MIN_SIZE = 40;
+
+function openCropModal(file) {
+  return new Promise(async (resolve) => {
+    let img;
+    try {
+      img = await loadImageFromFile(file);
+    } catch (err) {
+      console.error(err);
+      resolve(null);
+      return;
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "crop-overlay";
+    overlay.innerHTML = `
+      <div class="crop-card">
+        <div class="crop-card-head">
+          <div>
+            <div class="crop-card-title">사진 자르기</div>
+            <div class="crop-card-filename">${esc(file.name || "")}</div>
+          </div>
+          <button type="button" class="crop-close" aria-label="닫기">×</button>
+        </div>
+        <div class="crop-ratio-row">
+          <button type="button" class="crop-ratio-btn is-active" data-ratio="free">자유</button>
+          <button type="button" class="crop-ratio-btn" data-ratio="1:1">1:1</button>
+        </div>
+        <div class="crop-stage">
+          <div class="crop-image-wrap">
+            <img class="crop-image" alt="" />
+            <div class="crop-box">
+              <div class="crop-handle" data-handle="nw"></div>
+              <div class="crop-handle" data-handle="ne"></div>
+              <div class="crop-handle" data-handle="sw"></div>
+              <div class="crop-handle" data-handle="se"></div>
+            </div>
+          </div>
+        </div>
+        <div class="crop-card-foot">
+          <button type="button" class="text-btn" data-crop-cancel>취소</button>
+          <button type="button" class="primary-btn" data-crop-apply>적용</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const wrap = overlay.querySelector(".crop-image-wrap");
+    const imgEl = overlay.querySelector(".crop-image");
+    const box = overlay.querySelector(".crop-box");
+    const stage = overlay.querySelector(".crop-stage");
+
+    let ratioLocked = false;
+    let dispW = 0;
+    let dispH = 0;
+    let rect = { left: 0, top: 0, width: 0, height: 0 };
+
+    function layoutImage() {
+      const maxW = Math.min(stage.clientWidth - 4, 640);
+      const maxH = Math.min(window.innerHeight * 0.55, 520);
+      const scale = Math.min(1, maxW / img.naturalWidth, maxH / img.naturalHeight);
+      dispW = Math.round(img.naturalWidth * scale);
+      dispH = Math.round(img.naturalHeight * scale);
+      wrap.style.width = `${dispW}px`;
+      wrap.style.height = `${dispH}px`;
+      imgEl.src = img.src;
+      imgEl.style.width = `${dispW}px`;
+      imgEl.style.height = `${dispH}px`;
+
+      const initSize = Math.round(Math.min(dispW, dispH) * 0.9);
+      rect = {
+        left: Math.round((dispW - initSize) / 2),
+        top: Math.round((dispH - initSize) / 2),
+        width: initSize,
+        height: initSize,
+      };
+      applyRect();
+    }
+
+    function applyRect() {
+      box.style.left = `${rect.left}px`;
+      box.style.top = `${rect.top}px`;
+      box.style.width = `${rect.width}px`;
+      box.style.height = `${rect.height}px`;
+    }
+
+    function clampRect() {
+      rect.width = Math.min(rect.width, dispW);
+      rect.height = Math.min(rect.height, dispH);
+      rect.left = Math.min(Math.max(0, rect.left), dispW - rect.width);
+      rect.top = Math.min(Math.max(0, rect.top), dispH - rect.height);
+    }
+
+    layoutImage();
+
+    overlay.querySelectorAll(".crop-ratio-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        overlay.querySelectorAll(".crop-ratio-btn").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        ratioLocked = btn.dataset.ratio === "1:1";
+        if (ratioLocked) {
+          const size = Math.min(rect.width, rect.height);
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          rect = { left: cx - size / 2, top: cy - size / 2, width: size, height: size };
+          clampRect();
+          applyRect();
+        }
+      });
+    });
+
+    box.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".crop-handle")) return;
+      e.preventDefault();
+      box.setPointerCapture(e.pointerId);
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startRect = { ...rect };
+      function onMove(ev) {
+        rect.left = startRect.left + (ev.clientX - startX);
+        rect.top = startRect.top + (ev.clientY - startY);
+        clampRect();
+        applyRect();
+      }
+      function onUp(ev) {
+        box.releasePointerCapture(ev.pointerId);
+        box.removeEventListener("pointermove", onMove);
+        box.removeEventListener("pointerup", onUp);
+      }
+      box.addEventListener("pointermove", onMove);
+      box.addEventListener("pointerup", onUp);
+    });
+
+    overlay.querySelectorAll(".crop-handle").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handle.setPointerCapture(e.pointerId);
+        const which = handle.dataset.handle;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startRect = { ...rect };
+        const anchorX = which.includes("w") ? startRect.left + startRect.width : startRect.left;
+        const anchorY = which.includes("n") ? startRect.top + startRect.height : startRect.top;
+        function onMove(ev) {
+          let dx = ev.clientX - startX;
+          let dy = ev.clientY - startY;
+          let newLeft = which.includes("w") ? startRect.left + dx : startRect.left;
+          let newTop = which.includes("n") ? startRect.top + dy : startRect.top;
+          let newRight = which.includes("e") ? startRect.left + startRect.width + dx : startRect.left + startRect.width;
+          let newBottom = which.includes("s") ? startRect.top + startRect.height + dy : startRect.top + startRect.height;
+          let w = newRight - (which.includes("w") ? newLeft : startRect.left);
+          let h = newBottom - (which.includes("n") ? newTop : startRect.top);
+          let left = which.includes("w") ? newRight - w : startRect.left;
+          let top = which.includes("n") ? newBottom - h : startRect.top;
+
+          w = Math.max(CROP_HANDLE_MIN_SIZE, w);
+          h = Math.max(CROP_HANDLE_MIN_SIZE, h);
+
+          if (ratioLocked) {
+            const size = Math.max(w, h);
+            w = size;
+            h = size;
+            left = which.includes("w") ? anchorX - size : anchorX;
+            top = which.includes("n") ? anchorY - size : anchorY;
+          } else {
+            left = which.includes("w") ? anchorX - w : anchorX;
+            top = which.includes("n") ? anchorY - h : anchorY;
+          }
+
+          if (left < 0) { w += left; left = 0; }
+          if (top < 0) { h += top; top = 0; }
+          if (left + w > dispW) w = dispW - left;
+          if (top + h > dispH) h = dispH - top;
+          if (ratioLocked) {
+            const size = Math.min(w, h);
+            w = size;
+            h = size;
+            left = which.includes("w") ? anchorX - size : anchorX;
+            top = which.includes("n") ? anchorY - size : anchorY;
+          }
+
+          rect = { left, top, width: w, height: h };
+          applyRect();
+        }
+        function onUp(ev) {
+          handle.releasePointerCapture(ev.pointerId);
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+        }
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+      });
+    });
+
+    function finish(dataUrl) {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(dataUrl);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") finish(null);
+    }
+    document.addEventListener("keydown", onKey);
+
+    let overlayPointerDownOnSelf = false;
+    overlay.addEventListener("pointerdown", (e) => {
+      overlayPointerDownOnSelf = e.target === overlay;
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay && overlayPointerDownOnSelf) finish(null);
+      overlayPointerDownOnSelf = false;
+    });
+    overlay.querySelector(".crop-close").addEventListener("click", () => finish(null));
+    overlay.querySelector("[data-crop-cancel]").addEventListener("click", () => finish(null));
+    overlay.querySelector("[data-crop-apply]").addEventListener("click", () => {
+      const natScale = img.naturalWidth / dispW;
+      const sx = rect.left * natScale;
+      const sy = rect.top * natScale;
+      const sw = rect.width * natScale;
+      const sh = rect.height * natScale;
+      finish(cropToCompressedDataUrl(img, sx, sy, sw, sh));
+    });
   });
 }
 
