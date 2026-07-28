@@ -136,21 +136,21 @@ let iconUidCounter = 0;
 function folderIcon(color) {
   const { h, s, l } = color || DEFAULT_MEMBER_COLOR;
   const uid = `fg${iconUidCounter++}`;
-  const tabColor = hslToHex(h, clamp(s, 40, 75), clamp(l - 6, 45, 62));
-  const bodyTop = hslToHex(h, clamp(s, 40, 75), clamp(l + 14, 62, 78));
-  const bodyBottom = hslToHex(h, clamp(s, 40, 75), clamp(l - 2, 50, 68));
-  const glyph = hslToHex(h, clamp(s - 15, 15, 50), clamp(l - 18, 32, 52));
-  return `<svg viewBox="0 0 58 52" xmlns="http://www.w3.org/2000/svg">
+  const tabLight = hslToHex(h, s, clamp(l + 22, 0, 92));
+  const tabDark = hslToHex(h, s, clamp(l + 6, 0, 88));
+  const bodyLight = hslToHex(h, s, clamp(l + 12, 0, 90));
+  const bodyDark = hslToHex(h, s, clamp(l - 12, 8, 100));
+  return `<svg viewBox="0 0 68 54" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
+      <linearGradient id="${uid}Tab" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${tabLight}"/><stop offset="1" stop-color="${tabDark}"/>
+      </linearGradient>
       <linearGradient id="${uid}Body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${bodyTop}"/><stop offset="1" stop-color="${bodyBottom}"/>
+        <stop offset="0" stop-color="${bodyLight}"/><stop offset="1" stop-color="${bodyDark}"/>
       </linearGradient>
     </defs>
-    <path d="M4 14L4 8A3 3 0 0 1 7 5L16 5A2.5 2.5 0 0 1 18.4 7.1L20 8.7A2 2 0 0 1 21.5 11L52 11A1.5 1.5 0 0 1 53.5 12.5L53.5 14Z" fill="${tabColor}"/>
-    <rect x="4" y="13" width="49.5" height="2.5" rx="1.2" fill="#f7fbfe"/>
-    <rect x="4" y="15.5" width="50" height="30.5" rx="5" fill="url(#${uid}Body)"/>
-    <circle cx="24" cy="27" r="2" fill="${glyph}" fill-opacity="0.55"/>
-    <path d="M21 37 27 28 31 33 34 30 39 37Z" fill="${glyph}" fill-opacity="0.55"/>
+    <path d="M2 8a3 3 0 0 1 3-3h15l4 4h39a3 3 0 0 1 3 3v3H2V8Z" fill="url(#${uid}Tab)"/>
+    <path d="M2 11h64v32a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V11Z" fill="url(#${uid}Body)"/>
   </svg>`;
 }
 
