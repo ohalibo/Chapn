@@ -25,6 +25,7 @@ let draft = null;
 let dirty = false;
 let comments = [];
 let editingCommentId = null;
+let nowPlayingHandles = [];
 
 init();
 
@@ -181,6 +182,9 @@ function render() {
     commentsUnsub = null;
     comments = [];
     editingCommentId = null;
+  }
+  if (route.view !== "entry" && nowPlayingHandles.length) {
+    teardownNowPlaying();
   }
 
   root.innerHTML = `
@@ -381,6 +385,8 @@ function renderEntry(kind, n, person) {
       problem: entry?.problem || "",
       try: entry?.try || "",
       share: entry?.share || "",
+      music: entry?.music || "",
+      musicTitle: entry?.musicTitle || "",
       photos: entry?.photos ? entry.photos.map((p) => ({ ...p })) : [],
       updatedAt: entry?.updatedAt || null,
     };
@@ -409,6 +415,7 @@ const KPT_FIELDS = [
   { key: "try", title: "Try", desc: "시도한 일" },
 ];
 const SHARE_FIELD = { key: "share", title: "Share", desc: "공유하고 싶은 링크" };
+const MUSIC_FIELD = { key: "music", title: "Music", desc: "듣고 싶은 노래 (유튜브/사운드클라우드 링크)" };
 
 function isHttpUrl(str) {
   try {
@@ -417,6 +424,394 @@ function isHttpUrl(str) {
   } catch {
     return false;
   }
+}
+
+// 링크 하나를 "평소엔 하이퍼링크로 보이다가, 링크가 아닌 근처를 누르면
+// 바로 그 자리에서 입력창으로 바뀌는" 인라인 필드로 그려 넣습니다.
+// editable === false면(다른 사람 글 볼 때) 항상 표시 모드만 사용합니다.
+function stripUrlProtocol(v) {
+  return (v || "").replace(/^\s*https?:\/\//i, "");
+}
+
+function renderLinkField(container, { getValue, setValue, editable, emptyText }) {
+  container.innerHTML = `
+    <div class="link-field ${editable ? "link-field--editable" : ""}">
+      <a class="link-field-link" target="_blank" rel="noopener noreferrer" hidden></a>
+      <span class="link-field-text" hidden></span>
+      <span class="link-field-empty" hidden>${esc(emptyText || "작성하지 않았어요.")}</span>
+      ${
+        editable
+          ? `<span class="link-field-input-wrap" hidden>
+        <span class="link-field-prefix">https://</span><input type="text" class="link-field-input" placeholder="example.com/..." />
+      </span>`
+          : ""
+      }
+    </div>
+  `;
+  const root = container.querySelector(".link-field");
+  const linkEl = root.querySelector(".link-field-link");
+  const textEl = root.querySelector(".link-field-text");
+  const emptyEl = root.querySelector(".link-field-empty");
+  const wrapEl = editable ? root.querySelector(".link-field-input-wrap") : null;
+  const inputEl = editable ? root.querySelector(".link-field-input") : null;
+
+  function showDisplay() {
+    const value = (getValue() || "").trim();
+    linkEl.hidden = true;
+    textEl.hidden = true;
+    emptyEl.hidden = true;
+    if (value && isHttpUrl(value)) {
+      linkEl.href = value;
+      linkEl.textContent = value;
+      linkEl.hidden = false;
+    } else if (value) {
+      textEl.textContent = value;
+      textEl.hidden = false;
+    } else {
+      emptyEl.hidden = false;
+    }
+  }
+
+  if (editable) {
+    function startEdit() {
+      wrapEl.hidden = false;
+      inputEl.value = stripUrlProtocol(getValue());
+      linkEl.hidden = true;
+      textEl.hidden = true;
+      emptyEl.hidden = true;
+      inputEl.focus();
+      inputEl.select();
+    }
+    root.addEventListener("click", (e) => {
+      if (!wrapEl.hidden) return;
+      if (e.target.closest(".link-field-link")) return;
+      startEdit();
+    });
+    inputEl.addEventListener("input", (e) => {
+      const raw = stripUrlProtocol(e.target.value);
+      if (raw !== e.target.value) e.target.value = raw;
+      setValue(raw ? `https://${raw}` : "");
+      markDirty();
+    });
+    inputEl.addEventListener("blur", () => {
+      wrapEl.hidden = true;
+      showDisplay();
+    });
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") inputEl.blur();
+    });
+  }
+
+  showDisplay();
+  return { refresh: showDisplay };
+}
+
+// 클릭하면 그 자리에서 바로 고쳐 쓸 수 있는 짧은 텍스트 하나를 그려 넣습니다.
+// (Now Playing 곡 제목처럼, 자동으로 못 가져온 값을 사람이 대신 채워 넣을 때 씁니다.)
+function renderInlineText(container, { getValue, setValue, editable, placeholder }) {
+  container.innerHTML = `
+    <span class="now-playing-title-display"></span>
+    ${editable ? `<input type="text" class="now-playing-title-input" hidden />` : ""}
+  `;
+  const displayEl = container.querySelector(".now-playing-title-display");
+  const inputEl = editable ? container.querySelector(".now-playing-title-input") : null;
+
+  function render() {
+    const value = (getValue() || "").trim();
+    displayEl.textContent = value || placeholder || "";
+    displayEl.classList.toggle("is-placeholder", !value);
+  }
+
+  if (editable) {
+    container.classList.add("now-playing-title-mount--editable");
+    container.addEventListener("click", () => {
+      if (!inputEl.hidden) return;
+      inputEl.hidden = false;
+      displayEl.hidden = true;
+      inputEl.value = getValue() || "";
+      inputEl.focus();
+      inputEl.select();
+    });
+    inputEl.addEventListener("input", (e) => {
+      setValue(e.target.value);
+      markDirty();
+    });
+    inputEl.addEventListener("blur", () => {
+      inputEl.hidden = true;
+      displayEl.hidden = false;
+      render();
+    });
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") inputEl.blur();
+    });
+  }
+
+  render();
+  return { render };
+}
+
+function extractYouTubeId(url) {
+  if (!url) return null;
+  let u;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if (host === "youtu.be" || host.endsWith(".youtu.be")) {
+    return u.pathname.slice(1).split("/")[0] || null;
+  }
+  if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+    if (u.pathname === "/watch") return u.searchParams.get("v");
+    const m = u.pathname.match(/^\/(embed|shorts|live)\/([^/]+)/);
+    if (m) return m[2];
+  }
+  return null;
+}
+
+// Music 칸에 넣은 링크가 유튜브인지 사운드클라우드인지 구분해서
+// { type: "youtube", id } 또는 { type: "soundcloud", url } 형태로 돌려줍니다.
+function detectMusicSource(rawUrl) {
+  if (!rawUrl) return null;
+  const url = rawUrl.trim();
+  const youtubeId = extractYouTubeId(url);
+  if (youtubeId) return { type: "youtube", id: youtubeId };
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if (host === "soundcloud.com" || host.endsWith(".soundcloud.com") || host === "snd.sc" || host.endsWith(".snd.sc")) {
+    return { type: "soundcloud", url: u.toString() };
+  }
+  return null;
+}
+
+function formatPlayerTime(sec) {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+let ytApiPromise = null;
+function loadYouTubeApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise((resolve) => {
+    const prevCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (prevCallback) prevCallback();
+      resolve(window.YT);
+    };
+    const script = document.createElement("script");
+    script.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(script);
+  });
+  return ytApiPromise;
+}
+
+let scApiPromise = null;
+function loadSoundCloudApi() {
+  if (window.SC && window.SC.Widget) return Promise.resolve(window.SC);
+  if (scApiPromise) return scApiPromise;
+  scApiPromise = new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "https://w.soundcloud.com/player/api.js";
+    script.onload = () => resolve(window.SC);
+    document.head.appendChild(script);
+  });
+  return scApiPromise;
+}
+
+const NOW_PLAYING_LOAD_TIMEOUT_MS = 8000;
+
+// source(= detectMusicSource 결과)가 가리키는 자리에 "NOW PLAYING" 플레이어를
+// 그려 넣고, 나중에 정리(destroy)할 수 있는 핸들을 nowPlayingHandles에 등록합니다.
+// titleCtx: { getTitle, setTitle, editable } — 곡 제목을 사람이 직접 덮어쓸 수 있게 해줍니다.
+async function mountNowPlaying(container, source, titleCtx) {
+  const { getTitle, setTitle, editable } = titleCtx || {};
+  container.innerHTML = `
+    <div class="now-playing-label">Now Playing</div>
+    <hr class="now-playing-rule" />
+    <div class="now-playing-row">
+      <button type="button" class="now-playing-toggle" data-state="paused" aria-label="재생">
+        <span class="icon-play">▶</span>
+        <span class="icon-pause">⏸</span>
+      </button>
+      <div class="now-playing-title" id="now-playing-title-mount"></div>
+      <div class="now-playing-time">0:00 / 0:00</div>
+    </div>
+    <div class="now-playing-error" hidden>노래를 불러올 수 없어요.</div>
+    <hr class="now-playing-rule" />
+    <div class="now-playing-frame"></div>
+  `;
+  const rowEl = container.querySelector(".now-playing-row");
+  const errorEl = container.querySelector(".now-playing-error");
+  const toggleBtn = container.querySelector(".now-playing-toggle");
+  const timeEl = container.querySelector(".now-playing-time");
+  const frameEl = container.querySelector(".now-playing-frame");
+
+  let fetchedTitle = "";
+  const titleField = renderInlineText(container.querySelector("#now-playing-title-mount"), {
+    getValue: () => (getTitle ? getTitle() : "") || fetchedTitle,
+    setValue: (v) => setTitle && setTitle(v),
+    editable: !!editable,
+    placeholder: editable ? "제목을 입력해주세요" : "제목 미입력",
+  });
+  function setFetchedTitle(title) {
+    fetchedTitle = title || "";
+    titleField.render();
+  }
+
+  let destroyed = false;
+  let timer = null;
+  let loaded = false;
+
+  function showError() {
+    if (destroyed) return;
+    rowEl.hidden = true;
+    errorEl.hidden = false;
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  setTimeout(() => {
+    if (!loaded) showError();
+  }, NOW_PLAYING_LOAD_TIMEOUT_MS);
+
+  if (source.type === "youtube") {
+    const YT = await loadYouTubeApi();
+    if (destroyed) return;
+
+    const player = new YT.Player(frameEl, {
+      height: "1",
+      width: "1",
+      videoId: source.id,
+      playerVars: { controls: 0, disablekb: 1, playsinline: 1 },
+      events: {
+        onReady: (e) => {
+          loaded = true;
+          const data = e.target.getVideoData ? e.target.getVideoData() : null;
+          setFetchedTitle(data && data.title);
+          timeEl.textContent = `0:00 / ${formatPlayerTime(e.target.getDuration())}`;
+        },
+        onError: () => showError(),
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.PLAYING) {
+            toggleBtn.dataset.state = "playing";
+            if (timer) clearInterval(timer);
+            timer = setInterval(() => {
+              timeEl.textContent = `${formatPlayerTime(player.getCurrentTime())} / ${formatPlayerTime(player.getDuration())}`;
+            }, 500);
+          } else {
+            toggleBtn.dataset.state = "paused";
+            if (timer) {
+              clearInterval(timer);
+              timer = null;
+            }
+            if (e.data === YT.PlayerState.ENDED) {
+              timeEl.textContent = `0:00 / ${formatPlayerTime(player.getDuration())}`;
+            }
+          }
+        },
+      },
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      const state = player.getPlayerState();
+      if (state === YT.PlayerState.PLAYING) player.pauseVideo();
+      else player.playVideo();
+    });
+
+    nowPlayingHandles.push({
+      destroy() {
+        destroyed = true;
+        if (timer) clearInterval(timer);
+        try {
+          player.destroy();
+        } catch {
+          // player가 아직 준비되기 전에 파괴되는 경우는 무시해도 괜찮아요.
+        }
+      },
+    });
+    return;
+  }
+
+  // 사운드클라우드
+  // iframe 자체는 정상 크기로 두고(내부 위젯 스크립트가 파형을 그릴 캔버스 크기를
+  // 확보할 수 있도록), 바깥 .now-playing-frame이 1px로 잘라서 화면엔 안 보이게 합니다.
+  const iframe = document.createElement("iframe");
+  iframe.width = "300";
+  iframe.height = "166";
+  iframe.allow = "autoplay";
+  iframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(source.url)}&auto_play=false&show_artwork=false&visual=false`;
+  frameEl.appendChild(iframe);
+
+  const SC = await loadSoundCloudApi();
+  if (destroyed) return;
+  const widget = SC.Widget(iframe);
+
+  widget.bind(SC.Widget.Events.READY, () => {
+    loaded = true;
+    widget.getCurrentSound((sound) => {
+      setFetchedTitle(sound && sound.title);
+    });
+    widget.getDuration((ms) => {
+      timeEl.textContent = `0:00 / ${formatPlayerTime(ms / 1000)}`;
+    });
+  });
+  if (SC.Widget.Events.ERROR) {
+    widget.bind(SC.Widget.Events.ERROR, () => showError());
+  }
+  widget.bind(SC.Widget.Events.PLAY, () => {
+    toggleBtn.dataset.state = "playing";
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => {
+      widget.getPosition((posMs) => {
+        widget.getDuration((durMs) => {
+          timeEl.textContent = `${formatPlayerTime(posMs / 1000)} / ${formatPlayerTime(durMs / 1000)}`;
+        });
+      });
+    }, 500);
+  });
+  widget.bind(SC.Widget.Events.PAUSE, () => {
+    toggleBtn.dataset.state = "paused";
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  });
+  widget.bind(SC.Widget.Events.FINISH, () => {
+    toggleBtn.dataset.state = "paused";
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    if (toggleBtn.dataset.state === "playing") widget.pause();
+    else widget.play();
+  });
+
+  nowPlayingHandles.push({
+    destroy() {
+      destroyed = true;
+      if (timer) clearInterval(timer);
+      frameEl.innerHTML = "";
+    },
+  });
+}
+
+function teardownNowPlaying() {
+  nowPlayingHandles.forEach((h) => h.destroy());
+  nowPlayingHandles = [];
 }
 
 // 내용이 있고(저장된 값과 일치해서) "정리된" 상태일 때만 테두리를 없애요.
@@ -439,7 +834,10 @@ function renderEntryBody(kind, n, person, isOwner) {
 
   dateLine.textContent = draft.updatedAt ? `작성 시간 ${formatDateTime(draft.updatedAt)}` : "아직 저장 전이에요";
 
+  teardownNowPlaying();
+
   if (!isOwner) {
+    const musicSource = detectMusicSource(draft.music);
     contentEl.innerHTML =
       KPT_FIELDS.map(
         (f) => `
@@ -451,14 +849,30 @@ function renderEntryBody(kind, n, person, isOwner) {
       `
       <div class="kpt-field">
         <div class="kpt-label"><strong>${SHARE_FIELD.title}</strong><span>${SHARE_FIELD.desc}</span></div>
-        <div class="readonly-content">${
-          draft.share
-            ? isHttpUrl(draft.share)
-              ? `<a href="${esc(draft.share)}" target="_blank" rel="noopener noreferrer">${esc(draft.share)}</a>`
-              : esc(draft.share)
-            : "작성하지 않았어요."
-        }</div>
+        <div id="share-field-mount"></div>
+      </div>` +
+      `
+      <div class="kpt-field">
+        <div class="kpt-label"><strong>${MUSIC_FIELD.title}</strong><span>${MUSIC_FIELD.desc}</span></div>
+        ${
+          draft.music
+            ? musicSource
+              ? `<div class="now-playing" id="now-playing-readonly"></div>`
+              : `<div class="readonly-content">유튜브 또는 사운드클라우드 링크가 아니에요: ${esc(draft.music)}</div>`
+            : `<div class="readonly-content">작성하지 않았어요.</div>`
+        }
       </div>`;
+    renderLinkField(document.getElementById("share-field-mount"), {
+      getValue: () => draft.share,
+      setValue: (v) => { draft.share = v; },
+      editable: false,
+    });
+    if (musicSource) {
+      mountNowPlaying(document.getElementById("now-playing-readonly"), musicSource, {
+        getTitle: () => draft.musicTitle,
+        editable: false,
+      });
+    }
   } else {
     contentEl.innerHTML =
       KPT_FIELDS.map(
@@ -471,7 +885,14 @@ function renderEntryBody(kind, n, person, isOwner) {
       `
       <div class="kpt-field">
         <div class="kpt-label"><strong>${SHARE_FIELD.title}</strong><span>${SHARE_FIELD.desc}</span></div>
-        <input type="url" id="kpt-share" placeholder="https://..." />
+        <div id="share-field-mount"></div>
+      </div>` +
+      `
+      <div class="kpt-field">
+        <div class="kpt-label"><strong>${MUSIC_FIELD.title}</strong><span>${MUSIC_FIELD.desc}</span></div>
+        <input type="url" id="kpt-music" placeholder="유튜브 또는 사운드클라우드 링크" />
+        <div class="now-playing-hint" id="music-hint" hidden>유튜브 또는 사운드클라우드 링크 형식이 아니에요. 링크를 다시 확인해주세요.</div>
+        <div class="now-playing" id="now-playing-edit" hidden></div>
       </div>`;
     KPT_FIELDS.forEach((f) => {
       const textarea = document.getElementById(`kpt-${f.key}`);
@@ -485,14 +906,47 @@ function renderEntryBody(kind, n, person, isOwner) {
         autoGrowTextarea(e.target);
       });
     });
-    const shareInput = document.getElementById("kpt-share");
-    shareInput.value = draft.share;
-    applyFieldCleanState(shareInput, draft.share);
-    shareInput.addEventListener("input", (e) => {
-      draft.share = e.target.value;
+
+    renderLinkField(document.getElementById("share-field-mount"), {
+      getValue: () => draft.share,
+      setValue: (v) => { draft.share = v; },
+      editable: true,
+      emptyText: "클릭해서 링크를 추가해보세요",
+    });
+
+    const musicInput = document.getElementById("kpt-music");
+    const musicHint = document.getElementById("music-hint");
+    const musicPreview = document.getElementById("now-playing-edit");
+    let previewMusicKey = null;
+    function syncMusicPreview() {
+      const value = (draft.music || "").trim();
+      const source = detectMusicSource(value);
+      musicHint.hidden = !(value && !source);
+      const key = source ? `${source.type}:${source.id || source.url}` : null;
+      if (key === previewMusicKey) return;
+      previewMusicKey = key;
+      teardownNowPlaying();
+      if (source) {
+        musicPreview.hidden = false;
+        mountNowPlaying(musicPreview, source, {
+          getTitle: () => draft.musicTitle,
+          setTitle: (v) => { draft.musicTitle = v; },
+          editable: true,
+        });
+      } else {
+        musicPreview.hidden = true;
+        musicPreview.innerHTML = "";
+      }
+    }
+    musicInput.value = draft.music;
+    applyFieldCleanState(musicInput, draft.music);
+    musicInput.addEventListener("input", (e) => {
+      draft.music = e.target.value;
       e.target.classList.remove("is-clean");
       markDirty();
+      syncMusicPreview();
     });
+    syncMusicPreview();
   }
 
   fillPhotoGrid(photoGrid, isOwner);
@@ -891,6 +1345,8 @@ async function doSave(kind, n, person) {
       problem: draft.problem,
       try: draft.try,
       share: draft.share,
+      music: draft.music,
+      musicTitle: draft.musicTitle,
       photos: draft.photos,
     });
     dirty = false;
@@ -899,8 +1355,8 @@ async function doSave(kind, n, person) {
       const textarea = document.getElementById(`kpt-${f.key}`);
       if (textarea) applyFieldCleanState(textarea, draft[f.key]);
     });
-    const shareInput = document.getElementById("kpt-share");
-    if (shareInput) applyFieldCleanState(shareInput, draft.share);
+    const musicInput = document.getElementById("kpt-music");
+    if (musicInput) applyFieldCleanState(musicInput, draft.music);
   } catch (err) {
     console.error(err);
     alert("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
