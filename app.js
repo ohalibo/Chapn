@@ -26,6 +26,8 @@ let dirty = false;
 let comments = [];
 let editingCommentId = null;
 let nowPlayingHandles = [];
+let allComments = [];
+let commentsDigestOpen = false;
 
 init();
 
@@ -55,6 +57,10 @@ async function init() {
     announcements = list;
     render();
   });
+  store.subscribeAllComments((list) => {
+    allComments = list;
+    renderCommentsDigest();
+  });
   window.addEventListener("hashchange", () => {
     dirty = false;
     render();
@@ -63,6 +69,18 @@ async function init() {
     if (dirty) {
       e.preventDefault();
       e.returnValue = "";
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!commentsDigestOpen) return;
+    if (e.target.closest("#comments-digest-panel, #comments-digest-btn")) return;
+    commentsDigestOpen = false;
+    renderCommentsDigest();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && commentsDigestOpen) {
+      commentsDigestOpen = false;
+      renderCommentsDigest();
     }
   });
 }
@@ -167,6 +185,112 @@ function documentIcon() {
 }
 
 // ---------------------------------------------------------------------------
+// Comments digest (좌측 하단 종 모양 버튼 — 지금까지 달린 댓글을 모아보고
+// 눌러서 바로 그 회고 페이지로 이동)
+// ---------------------------------------------------------------------------
+function bellIcon() {
+  return `<svg viewBox="0 0 20 20" width="17" height="17" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M10 2.3a3.9 3.9 0 0 0-3.9 3.9v2.2c0 .7-.25 1.4-.7 1.95L4.3 11.7a1 1 0 0 0 .8 1.6h9.8a1 1 0 0 0 .8-1.6l-1.1-1.35c-.45-.55-.7-1.25-.7-1.95V6.2A3.9 3.9 0 0 0 10 2.3Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
+    <path d="M8.1 15.8a1.9 1.9 0 0 0 3.8 0" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function commentsDigestSeenKey() {
+  return `chapn_comments_seen_${session ? session.name : ""}`;
+}
+function getCommentsSeenAt() {
+  if (!session) return 0;
+  return Number(localStorage.getItem(commentsDigestSeenKey())) || 0;
+}
+function markCommentsSeen() {
+  if (!session) return;
+  localStorage.setItem(commentsDigestSeenKey(), String(Date.now()));
+}
+function commentTimeMs(c) {
+  const ts = c && c.createdAt;
+  if (!ts) return 0;
+  return typeof ts === "number" ? ts : ts.toMillis ? ts.toMillis() : Date.parse(ts) || 0;
+}
+function parseEntryId(entryId) {
+  const m = /^([wm])(\d+)_(.+)$/.exec(entryId || "");
+  if (!m) return null;
+  return { kind: m[1] === "m" ? "month" : "week", n: Number(m[2]), person: m[3] };
+}
+function entryLabelFor(parsed) {
+  const period = periodsFor(parsed.kind).find((p) => p.n === parsed.n);
+  const periodLabel = period ? period.label : `${parsed.kind === "month" ? "월" : "주차"} ${parsed.n}`;
+  return `${periodLabel} · ${parsed.person}`;
+}
+
+function digestRowHtml(c, parsed) {
+  const hash = `#/${parsed.kind}/${parsed.n}/person/${encodeURIComponent(parsed.person)}`;
+  const preview = (c.content || "").trim().replace(/\s+/g, " ");
+  const truncated = preview.length > 42 ? `${preview.slice(0, 42)}…` : preview;
+  return `
+    <button type="button" class="comments-digest-row" data-hash="${esc(hash)}">
+      <span class="comments-digest-row-top">
+        <span class="comments-digest-row-author">${esc(c.author || "")}</span>
+        <span class="comments-digest-row-time">${formatDateTime(c.createdAt)}</span>
+      </span>
+      <span class="comments-digest-row-preview">${esc(truncated) || "(내용 없음)"}</span>
+      <span class="comments-digest-row-meta">${esc(entryLabelFor(parsed))}</span>
+    </button>
+  `;
+}
+
+// 버튼/패널 DOM만 갱신합니다 — 전체 render()를 다시 부르면 지금 작성 중인
+// 다른 화면(예: 회고 작성 중 textarea)이 초기화될 수 있어서, 댓글이 새로
+// 달릴 때마다 이 함수만 따로 호출해요.
+function renderCommentsDigest() {
+  const btn = document.getElementById("comments-digest-btn");
+  const panel = document.getElementById("comments-digest-panel");
+  if (!btn || !panel) return;
+
+  const seenAt = getCommentsSeenAt();
+  const rows = allComments
+    .map((c) => ({ c, parsed: parseEntryId(c.entryId) }))
+    .filter((x) => x.parsed)
+    .sort((a, b) => commentTimeMs(b.c) - commentTimeMs(a.c));
+  const newRows = rows.filter((x) => commentTimeMs(x.c) > seenAt);
+  const oldRows = rows.filter((x) => commentTimeMs(x.c) <= seenAt);
+
+  btn.innerHTML = `
+    ${bellIcon()}
+    ${newRows.length > 0 ? `<span class="comments-digest-badge">${newRows.length > 99 ? "99+" : newRows.length}</span>` : ""}
+  `;
+
+  panel.hidden = !commentsDigestOpen;
+  panel.innerHTML = `
+    <div class="comments-digest-head">
+      <span>댓글 모아보기</span>
+      <button type="button" class="comments-digest-close" id="comments-digest-close" aria-label="닫기">×</button>
+    </div>
+    <div class="comments-digest-list">
+      ${
+        rows.length === 0
+          ? `<p class="comments-digest-empty">아직 댓글이 없어요.</p>`
+          : `
+        ${newRows.length > 0 ? `<div class="comments-digest-section-label">신규</div>${newRows.map((x) => digestRowHtml(x.c, x.parsed)).join("")}` : ""}
+        ${oldRows.length > 0 ? `<div class="comments-digest-section-label">이전</div>${oldRows.map((x) => digestRowHtml(x.c, x.parsed)).join("")}` : ""}
+      `
+      }
+    </div>
+  `;
+
+  document.getElementById("comments-digest-close").addEventListener("click", () => {
+    commentsDigestOpen = false;
+    renderCommentsDigest();
+  });
+  panel.querySelectorAll(".comments-digest-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      commentsDigestOpen = false;
+      go(row.dataset.hash);
+      renderCommentsDigest();
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Shell (macOS-style window: titlebar + sidebar + main)
 // ---------------------------------------------------------------------------
 function render() {
@@ -225,7 +349,20 @@ function render() {
         <main class="cargo-main" id="view"></main>
       </div>
     </div>
+    <button class="comments-digest-btn" id="comments-digest-btn" type="button" aria-label="댓글 모아보기"></button>
+    <div class="comments-digest-panel" id="comments-digest-panel" hidden></div>
   `;
+
+  document.getElementById("comments-digest-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    commentsDigestOpen = !commentsDigestOpen;
+    if (commentsDigestOpen) markCommentsSeen();
+    renderCommentsDigest();
+  });
+  document.getElementById("comments-digest-panel").addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+  renderCommentsDigest();
 
   const sidebarEl = document.getElementById("cargo-sidebar");
   const backdropEl = document.getElementById("sidebar-backdrop");

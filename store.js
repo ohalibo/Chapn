@@ -286,6 +286,13 @@ function createLocalStore() {
       return () => listeners.comments.delete(handler);
     },
 
+    subscribeAllComments(cb) {
+      const handler = (data) => cb([...data.comments]);
+      handler(load());
+      listeners.comments.add(handler);
+      return () => listeners.comments.delete(handler);
+    },
+
     async addComment(entryId, fields) {
       const data = load();
       data.comments.push({
@@ -522,6 +529,13 @@ async function createFirestoreStore() {
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+        cb(list);
+      });
+    },
+
+    subscribeAllComments(cb) {
+      return onSnapshot(commentsCol, (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         cb(list);
       });
     },
