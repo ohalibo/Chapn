@@ -339,9 +339,13 @@ function createLocalStore() {
 // 실서비스 모드: Firebase Firestore. 13명 모두에게 실시간으로 공유됨.
 // ---------------------------------------------------------------------------
 async function createFirestoreStore() {
-  const { initializeApp } = await import(
-    "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js"
-  );
+  // 세 SDK 조각을 하나씩 순서대로 기다리면 모바일처럼 왕복 지연이 큰
+  // 네트워크에서 그만큼 느려지므로, Promise.all로 동시에 받아옵니다.
+  const [{ initializeApp }, firestoreMod, authMod] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js"),
+    import("https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js"),
+  ]);
   const {
     getFirestore,
     collection,
@@ -355,10 +359,8 @@ async function createFirestoreStore() {
     limit,
     getDocs,
     serverTimestamp,
-  } = await import("https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js");
-  const { getAuth, signInAnonymously, onAuthStateChanged } = await import(
-    "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js"
-  );
+  } = firestoreMod;
+  const { getAuth, signInAnonymously, onAuthStateChanged } = authMod;
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
