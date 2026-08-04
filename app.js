@@ -222,6 +222,14 @@ function entryLabelFor(parsed) {
   return `${periodLabel} · ${parsed.person}`;
 }
 
+// renderEntry()가 페이지를 못 찾는 것과 같은 조건 — 주차/월이나 팀원이
+// 삭제돼서 더 이상 이동할 수 없는 댓글은 모아보기 목록에서 아예 빼요.
+function entryStillExists(parsed) {
+  const periodExists = periodsFor(parsed.kind).some((p) => p.n === parsed.n);
+  const memberExists = members.some((m) => m.name === parsed.person);
+  return periodExists && memberExists;
+}
+
 function digestRowHtml(c, parsed) {
   const hash = `#/${parsed.kind}/${parsed.n}/person/${encodeURIComponent(parsed.person)}`;
   const preview = (c.content || "").trim().replace(/\s+/g, " ");
@@ -249,7 +257,7 @@ function renderCommentsDigest() {
   const seenAt = getCommentsSeenAt();
   const rows = allComments
     .map((c) => ({ c, parsed: parseEntryId(c.entryId) }))
-    .filter((x) => x.parsed)
+    .filter((x) => x.parsed && entryStillExists(x.parsed))
     .sort((a, b) => commentTimeMs(b.c) - commentTimeMs(a.c));
   const newRows = rows.filter((x) => commentTimeMs(x.c) > seenAt);
   const oldRows = rows.filter((x) => commentTimeMs(x.c) <= seenAt);
