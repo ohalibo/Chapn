@@ -348,6 +348,9 @@ async function createFirestoreStore() {
   ]);
   const {
     getFirestore,
+    initializeFirestore,
+    persistentLocalCache,
+    persistentMultipleTabManager,
     collection,
     doc,
     onSnapshot,
@@ -363,7 +366,18 @@ async function createFirestoreStore() {
   const { getAuth, signInAnonymously, onAuthStateChanged } = authMod;
 
   const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+  // 기기에 마지막으로 받은 데이터를 캐시해두면, 다음에 열 때는 캐시를 먼저
+  // 바로 보여주고 그 사이에 서버와 동기화해서 체감 로딩이 훨씬 빨라져요.
+  // (사파리 프라이빗 모드처럼 IndexedDB를 못 쓰는 환경이면 캐시 없이 진행.)
+  let db;
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch (err) {
+    console.warn("Firestore 로컬 캐시를 켜지 못했어요. 캐시 없이 계속 진행해요.", err);
+    db = getFirestore(app);
+  }
   const auth = getAuth(app);
 
   await new Promise((resolve, reject) => {
