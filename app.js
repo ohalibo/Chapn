@@ -641,7 +641,7 @@ const KPT_FIELDS = [
   { key: "problem", title: "Problem", desc: "아쉬웠던 일" },
   { key: "try", title: "Try", desc: "시도한 일" },
 ];
-const SHARE_FIELD = { key: "share", title: "Share", desc: "공유하고 싶은 링크" };
+const SHARE_FIELD = { key: "share", title: "Share", desc: "공유하고 싶은 것" };
 const MUSIC_FIELD = { key: "music", title: "Music", desc: "듣고 싶은 노래 (유튜브/사운드클라우드 링크)" };
 
 function isHttpUrl(str) {
@@ -737,8 +737,43 @@ function renderLinkField(container, { getValue, setValue, editable, emptyText })
 // 늘어나는 textarea, Keep/Problem/Try와 같은 방식) 중에 골라 쓸 수 있게 해줍니다.
 function mountShareField(container, editable) {
   if (!editable) {
-    if (draft.shareType === "text") {
-      container.innerHTML = `<div class="readonly-content">${draft.shareText && draft.shareText.trim() ? esc(draft.shareText) : "작성하지 않았어요."}</div>`;
+    const hasLink = !!(draft.shareLink && draft.shareLink.trim());
+    const hasText = !!(draft.shareText && draft.shareText.trim());
+
+    // 링크랑 글을 둘 다 적어놨으면, 보는 사람이 토글로 둘 다 볼 수 있게 해요.
+    // 하나만 적었으면 굳이 토글 없이 그것만 바로 보여줘요.
+    if (hasLink && hasText) {
+      let viewMode = draft.shareType === "text" ? "text" : "link";
+      container.innerHTML = `
+        <div class="share-mode-toggle">
+          <button type="button" class="share-mode-btn" data-share-mode="link">링크</button>
+          <button type="button" class="share-mode-btn" data-share-mode="text">글</button>
+        </div>
+        <div class="share-mode-body"></div>
+      `;
+      const bodyEl = container.querySelector(".share-mode-body");
+      function renderViewBody() {
+        container.querySelectorAll(".share-mode-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.shareMode === viewMode);
+        });
+        if (viewMode === "text") {
+          bodyEl.innerHTML = `<div class="readonly-content">${esc(draft.shareText)}</div>`;
+        } else {
+          bodyEl.innerHTML = "";
+          renderLinkField(bodyEl, { getValue: () => draft.shareLink, setValue: () => {}, editable: false });
+        }
+      }
+      container.querySelectorAll(".share-mode-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          viewMode = btn.dataset.shareMode;
+          renderViewBody();
+        });
+      });
+      renderViewBody();
+      return;
+    }
+    if (hasText) {
+      container.innerHTML = `<div class="readonly-content">${esc(draft.shareText)}</div>`;
       return;
     }
     container.innerHTML = "";
@@ -769,13 +804,16 @@ function mountShareField(container, editable) {
     bodyEl.innerHTML = "";
     if (draft.shareType === "text") {
       const textarea = document.createElement("textarea");
+      textarea.id = "share-text-input";
       textarea.className = "share-text-input";
       textarea.placeholder = "자유롭게 적어보세요";
       textarea.value = draft.shareText || "";
       bodyEl.appendChild(textarea);
+      applyFieldCleanState(textarea, draft.shareText);
       autoGrowTextarea(textarea);
       textarea.addEventListener("input", (e) => {
         draft.shareText = e.target.value;
+        e.target.classList.remove("is-clean");
         markDirty();
         autoGrowTextarea(e.target);
       });
@@ -1646,6 +1684,8 @@ async function doSave(kind, n, person) {
     });
     const musicInput = document.getElementById("kpt-music");
     if (musicInput) applyFieldCleanState(musicInput, draft.music);
+    const shareTextInput = document.getElementById("share-text-input");
+    if (shareTextInput) applyFieldCleanState(shareTextInput, draft.shareText);
   } catch (err) {
     console.error(err);
     alert("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
