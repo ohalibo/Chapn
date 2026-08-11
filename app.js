@@ -28,6 +28,7 @@ let editingCommentId = null;
 let nowPlayingHandles = [];
 let allComments = [];
 let commentsDigestOpen = false;
+let mountedEntryKey = null;
 
 init();
 
@@ -301,77 +302,16 @@ function renderCommentsDigest() {
 // ---------------------------------------------------------------------------
 // Shell (macOS-style window: titlebar + sidebar + main)
 // ---------------------------------------------------------------------------
-function render() {
-  if (!session) return renderGate();
-  const route = parseHash();
-  if (route.view !== "entry" && entryUnsub) {
-    entryUnsub();
-    entryUnsub = null;
-    draft = null;
-  }
-  if (route.view !== "entry" && commentsUnsub) {
-    commentsUnsub();
-    commentsUnsub = null;
-    comments = [];
-    editingCommentId = null;
-  }
-  if (route.view !== "entry" && nowPlayingHandles.length) {
-    teardownNowPlaying();
-  }
-
-  root.innerHTML = `
-    <div class="cargo-window">
-      <div class="cargo-titlebar">
-        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="메뉴 열기">
-          <svg viewBox="0 0 20 16" width="18" height="14"><path d="M0 1h20M0 8h20M0 15h20" stroke="currentColor" stroke-width="1.6"/></svg>
-        </button>
-        <span class="tl-dot red"></span><span class="tl-dot yellow"></span><span class="tl-dot green"></span>
-        <span class="cargo-title">챕터엔 회고록</span>
-      </div>
-      <div class="cargo-body">
-        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
-        <aside class="cargo-sidebar" id="cargo-sidebar">
-          <div class="sb-session">
-            <span class="sb-session-name">${esc(session.name)}님</span>
-            <button class="sb-session-logout" id="logout-btn">나가기</button>
-          </div>
-          <button class="sb-item ${route.view === "weeks" ? "active" : ""}" data-hash="#/">
-            ${sidebarIcon()}<span class="sb-label">전체보기</span>
-          </button>
-          <div class="sb-section-title">주차</div>
-          ${WEEKS.map(
-            (w) => `
-            <button class="sb-item ${route.kind === "week" && route.n === w.n ? "active" : ""}" data-hash="#/week/${w.n}">
-              ${sidebarIcon()}<span class="sb-label">${esc(w.label)}</span>
-            </button>`
-          ).join("")}
-          ${MONTHS.length > 0 ? `
-          <div class="sb-section-title">월간</div>
-          ${MONTHS.map(
-            (m) => `
-            <button class="sb-item ${route.kind === "month" && route.n === m.n ? "active" : ""}" data-hash="#/month/${m.n}">
-              ${sidebarIcon()}<span class="sb-label">${esc(m.label)}</span>
-            </button>`
-          ).join("")}` : ""}
-        </aside>
-        <main class="cargo-main" id="view"></main>
-      </div>
-    </div>
-    <button class="comments-digest-btn" id="comments-digest-btn" type="button" aria-label="댓글 모아보기"></button>
-    <div class="comments-digest-panel" id="comments-digest-panel" hidden></div>
-  `;
-
-  document.getElementById("comments-digest-btn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    commentsDigestOpen = !commentsDigestOpen;
-    if (commentsDigestOpen) markCommentsSeen();
-    renderCommentsDigest();
-  });
-  document.getElementById("comments-digest-panel").addEventListener("click", (e) => {
-    e.stopPropagation();
-  });
-  renderCommentsDigest();
-
+// 13명이 같이 쓰다 보니, 누군가 어디서든 저장/댓글/설정 변경을 하면 그
+// 구독 콜백이 "전체" render()를 다시 부르게 되어 있었어요. 예전에는
+// render()가 매번 root.innerHTML을 통째로 새로 그렸는데, 그러면 하필
+// 그 순간 다른 사람이 회고를 쓰고 있던 <textarea>까지 통째로 새로 만들어져서
+// 입력 중이던(아직 저장 안 한) 내용과 포커스가 날아가 버렸어요 — "저장하면
+// 리셋되는" 것처럼 보인 원인. 그래서 지금은 껍데기(사이드바 등)는 한 번만
+// 만들고, "이미 보고 있는 회고와 같은 회고"면 본문(#view)은 다시 그리지
+// 않도록 바꿨어요. 그 회고 자체의 최신 내용은 renderEntry()가 따로 걸어둔
+// 전용 구독(entryUnsub)이 알아서 반영해줘요.
+function wireShellOnce() {
   const sidebarEl = document.getElementById("cargo-sidebar");
   const backdropEl = document.getElementById("sidebar-backdrop");
   function closeMobileSidebar() {
@@ -384,7 +324,76 @@ function render() {
   });
   backdropEl.addEventListener("click", closeMobileSidebar);
 
-  root.querySelectorAll(".sb-item[data-hash]").forEach((el) => {
+  document.getElementById("comments-digest-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    commentsDigestOpen = !commentsDigestOpen;
+    if (commentsDigestOpen) markCommentsSeen();
+    renderCommentsDigest();
+  });
+  document.getElementById("comments-digest-panel").addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+  renderCommentsDigest();
+}
+
+function ensureShellMounted() {
+  if (document.querySelector(".cargo-window")) return;
+  root.innerHTML = `
+    <div class="cargo-window">
+      <div class="cargo-titlebar">
+        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="메뉴 열기">
+          <svg viewBox="0 0 20 16" width="18" height="14"><path d="M0 1h20M0 8h20M0 15h20" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+        <span class="tl-dot red"></span><span class="tl-dot yellow"></span><span class="tl-dot green"></span>
+        <span class="cargo-title">챕터엔 회고록</span>
+      </div>
+      <div class="cargo-body">
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+        <aside class="cargo-sidebar" id="cargo-sidebar"></aside>
+        <main class="cargo-main" id="view"></main>
+      </div>
+    </div>
+    <button class="comments-digest-btn" id="comments-digest-btn" type="button" aria-label="댓글 모아보기"></button>
+    <div class="comments-digest-panel" id="comments-digest-panel" hidden></div>
+  `;
+  wireShellOnce();
+}
+
+// 사이드바는 눌러도 되는 버튼들만 있어서(입력 중인 텍스트가 없음) 매번
+// 다시 그려도 안전해요. 그래서 최신 주차/월/세션 정보를 그때그때 반영해요.
+function updateSidebarNav(route) {
+  const sidebarEl = document.getElementById("cargo-sidebar");
+  const backdropEl = document.getElementById("sidebar-backdrop");
+  sidebarEl.innerHTML = `
+    <div class="sb-session">
+      <span class="sb-session-name">${esc(session.name)}님</span>
+      <button class="sb-session-logout" id="logout-btn">나가기</button>
+    </div>
+    <button class="sb-item ${route.view === "weeks" ? "active" : ""}" data-hash="#/">
+      ${sidebarIcon()}<span class="sb-label">전체보기</span>
+    </button>
+    <div class="sb-section-title">주차</div>
+    ${WEEKS.map(
+      (w) => `
+      <button class="sb-item ${route.kind === "week" && route.n === w.n ? "active" : ""}" data-hash="#/week/${w.n}">
+        ${sidebarIcon()}<span class="sb-label">${esc(w.label)}</span>
+      </button>`
+    ).join("")}
+    ${MONTHS.length > 0 ? `
+    <div class="sb-section-title">월간</div>
+    ${MONTHS.map(
+      (m) => `
+      <button class="sb-item ${route.kind === "month" && route.n === m.n ? "active" : ""}" data-hash="#/month/${m.n}">
+        ${sidebarIcon()}<span class="sb-label">${esc(m.label)}</span>
+      </button>`
+    ).join("")}` : ""}
+  `;
+
+  function closeMobileSidebar() {
+    sidebarEl.classList.remove("mobile-open");
+    backdropEl.classList.remove("visible");
+  }
+  sidebarEl.querySelectorAll(".sb-item[data-hash]").forEach((el) => {
     el.addEventListener("click", () => {
       closeMobileSidebar();
       go(el.dataset.hash);
@@ -395,11 +404,44 @@ function render() {
     clearSession();
     render();
   });
+}
+
+function render() {
+  if (!session) {
+    mountedEntryKey = null;
+    return renderGate();
+  }
+  const route = parseHash();
+  ensureShellMounted();
+  updateSidebarNav(route);
+
+  if (route.view === "entry") {
+    const key = `${route.kind}:${route.n}:${route.person}`;
+    if (key === mountedEntryKey) return; // 같은 회고를 계속 보고 있는 중 — 본문은 건드리지 않아요.
+    mountedEntryKey = key;
+    renderEntry(route.kind, route.n, route.person);
+    return;
+  }
+
+  if (mountedEntryKey) {
+    mountedEntryKey = null;
+    if (entryUnsub) {
+      entryUnsub();
+      entryUnsub = null;
+      draft = null;
+    }
+    if (commentsUnsub) {
+      commentsUnsub();
+      commentsUnsub = null;
+      comments = [];
+      editingCommentId = null;
+    }
+    if (nowPlayingHandles.length) teardownNowPlaying();
+  }
 
   if (route.view === "weeks") renderWeeks();
   else if (route.view === "people") renderPeople(route.kind, route.n);
   else if (route.view === "notice") renderNotice(route.noticeId);
-  else renderEntry(route.kind, route.n, route.person);
 }
 
 // ---------------------------------------------------------------------------
