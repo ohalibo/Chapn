@@ -28,6 +28,7 @@ let editingCommentId = null;
 let nowPlayingHandles = [];
 let allComments = [];
 let commentsDigestOpen = false;
+let commentsDigestTab = "mine"; // "mine" | "others"
 let mountedEntryKey = null;
 let membersLoaded = false;
 let weeksLoaded = false;
@@ -265,16 +266,20 @@ function renderCommentsDigest() {
 
   const seenAt = getCommentsSeenAt();
   const oldestVisible = Date.now() - COMMENTS_DIGEST_MAX_AGE_MS;
-  const rows = allComments
+  const allRows = allComments
     .map((c) => ({ c, parsed: parseEntryId(c.entryId) }))
     .filter((x) => x.parsed && entryStillExists(x.parsed) && commentTimeMs(x.c) >= oldestVisible)
     .sort((a, b) => commentTimeMs(b.c) - commentTimeMs(a.c));
+  const mineRows = allRows.filter((x) => x.parsed.person === session.name);
+  const othersRows = allRows.filter((x) => x.parsed.person !== session.name);
+  const rows = commentsDigestTab === "mine" ? mineRows : othersRows;
   const newRows = rows.filter((x) => commentTimeMs(x.c) > seenAt);
   const oldRows = rows.filter((x) => commentTimeMs(x.c) <= seenAt);
+  const totalNewCount = allRows.filter((x) => commentTimeMs(x.c) > seenAt).length;
 
   btn.innerHTML = `
     ${bellIcon()}
-    ${newRows.length > 0 ? `<span class="comments-digest-badge">${newRows.length > 99 ? "99+" : newRows.length}</span>` : ""}
+    ${totalNewCount > 0 ? `<span class="comments-digest-badge">${totalNewCount > 99 ? "99+" : totalNewCount}</span>` : ""}
   `;
 
   panel.hidden = !commentsDigestOpen;
@@ -283,10 +288,18 @@ function renderCommentsDigest() {
       <span>댓글 모아보기</span>
       <button type="button" class="comments-digest-close" id="comments-digest-close" aria-label="닫기">×</button>
     </div>
+    <div class="comments-digest-tabs">
+      <button type="button" class="comments-digest-tab ${commentsDigestTab === "mine" ? "active" : ""}" data-digest-tab="mine">
+        내 글 댓글${mineRows.length > 0 ? ` (${mineRows.length})` : ""}
+      </button>
+      <button type="button" class="comments-digest-tab ${commentsDigestTab === "others" ? "active" : ""}" data-digest-tab="others">
+        다른 사람 댓글${othersRows.length > 0 ? ` (${othersRows.length})` : ""}
+      </button>
+    </div>
     <div class="comments-digest-list">
       ${
         rows.length === 0
-          ? `<p class="comments-digest-empty">아직 댓글이 없어요.</p>`
+          ? `<p class="comments-digest-empty">${commentsDigestTab === "mine" ? "내 글에 달린 댓글이 없어요." : "다른 사람 글에 달린 댓글이 없어요."}</p>`
           : `
         ${newRows.length > 0 ? `<div class="comments-digest-section-label">신규</div>${newRows.map((x) => digestRowHtml(x.c, x.parsed)).join("")}` : ""}
         ${oldRows.length > 0 ? `<div class="comments-digest-section-label">이전</div>${oldRows.map((x) => digestRowHtml(x.c, x.parsed)).join("")}` : ""}
@@ -298,6 +311,12 @@ function renderCommentsDigest() {
   document.getElementById("comments-digest-close").addEventListener("click", () => {
     commentsDigestOpen = false;
     renderCommentsDigest();
+  });
+  panel.querySelectorAll("[data-digest-tab]").forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      commentsDigestTab = tabBtn.dataset.digestTab;
+      renderCommentsDigest();
+    });
   });
   panel.querySelectorAll(".comments-digest-row").forEach((row) => {
     row.addEventListener("click", () => {
@@ -590,7 +609,9 @@ function renderEntry(kind, n, person) {
       keep: entry?.keep || "",
       problem: entry?.problem || "",
       try: entry?.try || "",
-      share: entry?.share || "",
+      shareLink: entry?.shareLink ?? entry?.share ?? "",
+      shareText: entry?.shareText || "",
+      shareType: entry?.shareType === "text" ? "text" : "link",
       music: entry?.music || "",
       musicTitle: entry?.musicTitle || "",
       photos: entry?.photos ? entry.photos.map((p) => ({ ...p })) : [],
@@ -710,6 +731,75 @@ function renderLinkField(container, { getValue, setValue, editable, emptyText })
 
   showDisplay();
   return { refresh: showDisplay };
+}
+
+// Share 칸을 "링크" 모드(renderLinkField 그대로)와 "글" 모드(자동으로
+// 늘어나는 textarea, Keep/Problem/Try와 같은 방식) 중에 골라 쓸 수 있게 해줍니다.
+function mountShareField(container, editable) {
+  if (!editable) {
+    if (draft.shareType === "text") {
+      container.innerHTML = `<div class="readonly-content">${draft.shareText && draft.shareText.trim() ? esc(draft.shareText) : "작성하지 않았어요."}</div>`;
+      return;
+    }
+    container.innerHTML = "";
+    renderLinkField(container, {
+      getValue: () => draft.shareLink,
+      setValue: (v) => { draft.shareLink = v; },
+      editable: false,
+    });
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="share-mode-toggle">
+      <button type="button" class="share-mode-btn" data-share-mode="link">링크</button>
+      <button type="button" class="share-mode-btn" data-share-mode="text">글</button>
+    </div>
+    <div class="share-mode-body"></div>
+  `;
+  const bodyEl = container.querySelector(".share-mode-body");
+
+  // 링크 모드와 글 모드는 서로 다른 내용을 담는 별개의 칸이에요(draft.shareLink
+  // / draft.shareText). 토글을 바꿔도 다른 모드에 입력했던 텍스트가 섞여
+  // 보이지 않아요 — shareType은 "지금 어느 쪽을 보여줄지"만 결정합니다.
+  function mountBody() {
+    container.querySelectorAll(".share-mode-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.shareMode === (draft.shareType || "link"));
+    });
+    bodyEl.innerHTML = "";
+    if (draft.shareType === "text") {
+      const textarea = document.createElement("textarea");
+      textarea.className = "share-text-input";
+      textarea.placeholder = "자유롭게 적어보세요";
+      textarea.value = draft.shareText || "";
+      bodyEl.appendChild(textarea);
+      autoGrowTextarea(textarea);
+      textarea.addEventListener("input", (e) => {
+        draft.shareText = e.target.value;
+        markDirty();
+        autoGrowTextarea(e.target);
+      });
+    } else {
+      renderLinkField(bodyEl, {
+        getValue: () => draft.shareLink,
+        setValue: (v) => { draft.shareLink = v; },
+        editable: true,
+        emptyText: "클릭해서 링크를 추가해보세요",
+      });
+    }
+  }
+
+  container.querySelectorAll(".share-mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.dataset.shareMode;
+      if (mode === (draft.shareType || "link")) return;
+      draft.shareType = mode;
+      markDirty();
+      mountBody();
+    });
+  });
+
+  mountBody();
 }
 
 // 클릭하면 그 자리에서 바로 고쳐 쓸 수 있는 짧은 텍스트 하나를 그려 넣습니다.
@@ -1068,11 +1158,7 @@ function renderEntryBody(kind, n, person, isOwner) {
             : `<div class="readonly-content">작성하지 않았어요.</div>`
         }
       </div>`;
-    renderLinkField(document.getElementById("share-field-mount"), {
-      getValue: () => draft.share,
-      setValue: (v) => { draft.share = v; },
-      editable: false,
-    });
+    mountShareField(document.getElementById("share-field-mount"), false);
     if (musicSource) {
       mountNowPlaying(document.getElementById("now-playing-readonly"), musicSource, {
         getTitle: () => draft.musicTitle,
@@ -1113,12 +1199,7 @@ function renderEntryBody(kind, n, person, isOwner) {
       });
     });
 
-    renderLinkField(document.getElementById("share-field-mount"), {
-      getValue: () => draft.share,
-      setValue: (v) => { draft.share = v; },
-      editable: true,
-      emptyText: "클릭해서 링크를 추가해보세요",
-    });
+    mountShareField(document.getElementById("share-field-mount"), true);
 
     const musicInput = document.getElementById("kpt-music");
     const musicHint = document.getElementById("music-hint");
@@ -1550,7 +1631,9 @@ async function doSave(kind, n, person) {
       keep: draft.keep,
       problem: draft.problem,
       try: draft.try,
-      share: draft.share,
+      shareLink: draft.shareLink,
+      shareText: draft.shareText,
+      shareType: draft.shareType,
       music: draft.music,
       musicTitle: draft.musicTitle,
       photos: draft.photos,
