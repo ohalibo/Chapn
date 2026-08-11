@@ -29,6 +29,9 @@ let nowPlayingHandles = [];
 let allComments = [];
 let commentsDigestOpen = false;
 let mountedEntryKey = null;
+let membersLoaded = false;
+let weeksLoaded = false;
+let monthsLoaded = false;
 
 init();
 
@@ -36,10 +39,11 @@ async function init() {
   store = await getStore();
   store.subscribeMembers((list) => {
     members = list;
-    if (session && !members.some((m) => m.name === session.name && m.pin === session.pin)) {
+    if (membersLoaded && session && !members.some((m) => m.name === session.name && m.pin === session.pin)) {
       session = null;
       clearSession();
     }
+    membersLoaded = true;
     render();
   });
   store.subscribeAllEntries((map) => {
@@ -48,10 +52,12 @@ async function init() {
   });
   store.subscribeWeeks((list) => {
     WEEKS = list;
+    weeksLoaded = true;
     render();
   });
   store.subscribeMonths((list) => {
     MONTHS = list;
+    monthsLoaded = true;
     render();
   });
   store.subscribeAnnouncements((list) => {
@@ -189,6 +195,8 @@ function documentIcon() {
 // Comments digest (좌측 하단 종 모양 버튼 — 지금까지 달린 댓글을 모아보고
 // 눌러서 바로 그 회고 페이지로 이동)
 // ---------------------------------------------------------------------------
+const COMMENTS_DIGEST_MAX_AGE_MS = 10 * 24 * 60 * 60 * 1000; // 작성일로부터 10일까지만 목록에 보여줘요.
+
 function bellIcon() {
   return `<svg viewBox="0 0 20 20" width="17" height="17" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M10 2.3a3.9 3.9 0 0 0-3.9 3.9v2.2c0 .7-.25 1.4-.7 1.95L4.3 11.7a1 1 0 0 0 .8 1.6h9.8a1 1 0 0 0 .8-1.6l-1.1-1.35c-.45-.55-.7-1.25-.7-1.95V6.2A3.9 3.9 0 0 0 10 2.3Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
@@ -256,9 +264,10 @@ function renderCommentsDigest() {
   if (!btn || !panel) return;
 
   const seenAt = getCommentsSeenAt();
+  const oldestVisible = Date.now() - COMMENTS_DIGEST_MAX_AGE_MS;
   const rows = allComments
     .map((c) => ({ c, parsed: parseEntryId(c.entryId) }))
-    .filter((x) => x.parsed && entryStillExists(x.parsed))
+    .filter((x) => x.parsed && entryStillExists(x.parsed) && commentTimeMs(x.c) >= oldestVisible)
     .sort((a, b) => commentTimeMs(b.c) - commentTimeMs(a.c));
   const newRows = rows.filter((x) => commentTimeMs(x.c) > seenAt);
   const oldRows = rows.filter((x) => commentTimeMs(x.c) <= seenAt);
@@ -418,6 +427,16 @@ function render() {
   if (route.view === "entry") {
     const key = `${route.kind}:${route.n}:${route.person}`;
     if (key === mountedEntryKey) return; // 같은 회고를 계속 보고 있는 중 — 본문은 건드리지 않아요.
+    // 주차/월 목록이나 팀원 목록이 아직 한 번도 안 왔으면(막 접속한 직후 등),
+    // 진짜로 없는 페이지인지 아직 판단할 수 없어요. 여기서 mountedEntryKey를
+    // 확정해버리면 나중에 데이터가 도착해도 다시 그려주지 않으니, 이 경우엔
+    // "불러오는 중" 상태로만 두고 다음 render()를 기다려요.
+    const periodLoaded = route.kind === "month" ? monthsLoaded : weeksLoaded;
+    if (!periodLoaded || !membersLoaded) {
+      const view = document.getElementById("view");
+      if (view) view.innerHTML = `<div class="empty-state">불러오는 중...</div>`;
+      return;
+    }
     mountedEntryKey = key;
     renderEntry(route.kind, route.n, route.person);
     return;
