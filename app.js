@@ -639,7 +639,7 @@ function formatDateTime(ts) {
 const KPT_FIELDS = [
   { key: "keep", title: "Keep", desc: "이번 주 잘한 일" },
   { key: "problem", title: "Problem", desc: "아쉬웠던 일" },
-  { key: "try", title: "Try", desc: "시도한 일" },
+  { key: "try", title: "Try", desc: "다음 주 시도해볼 일" },
 ];
 const SHARE_FIELD = { key: "share", title: "Share", desc: "공유하고 싶은 것" };
 const MUSIC_FIELD = { key: "music", title: "Music", desc: "듣고 싶은 노래 (유튜브/사운드클라우드 링크)" };
