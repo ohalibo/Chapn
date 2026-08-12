@@ -50,7 +50,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { height: 100%; overflow-x: hidden; }
 body {
   margin: 0;
   background: var(--page-bg);
@@ -757,7 +757,7 @@ button, input, textarea { font-family: inherit; color: inherit; }
 /* ---------- Comments digest (좌측 하단 종 모양 버튼) ---------- */
 .comments-digest-btn {
   position: fixed;
-  left: 24px;
+  right: 24px;
   bottom: 24px;
   width: 46px;
   height: 46px;
@@ -791,7 +791,7 @@ button, input, textarea { font-family: inherit; color: inherit; }
 }
 .comments-digest-panel {
   position: fixed;
-  left: 24px;
+  right: 24px;
   bottom: 80px;
   width: 320px;
   max-width: calc(100vw - 48px);
@@ -880,8 +880,8 @@ button, input, textarea { font-family: inherit; color: inherit; }
 .comments-digest-empty { font-size: 0.82rem; color: var(--ink-faint); padding: 20px 14px; text-align: center; }
 
 @media (max-width: 720px) {
-  .comments-digest-btn { left: 14px; bottom: 14px; }
-  .comments-digest-panel { left: 14px; bottom: 68px; }
+  .comments-digest-btn { right: 14px; bottom: 14px; }
+  .comments-digest-panel { right: 14px; bottom: 68px; }
 }
 
 /* ---------- Notice (announcement) view ---------- */

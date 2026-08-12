@@ -1711,7 +1711,7 @@ function renderComments(kind, n, person, isOwner) {
     const indent = Math.min(depth, COMMENT_MAX_INDENT_DEPTH) * 16;
     if (editingCommentId === c.id) {
       return `
-        <div class="comment-item" data-id="${c.id}" data-depth="${depth}" style="margin-left:${indent}px">
+        <div class="comment-item" data-id="${c.id}" data-depth="${depth}" style="margin-left:${indent}px;width:calc(100% - ${indent}px)">
           <div class="comment-head">
             <span class="comment-author">${esc(c.author)}</span>
             <span class="comment-time">${formatDateTime(c.createdAt)}</span>
@@ -1727,7 +1727,7 @@ function renderComments(kind, n, person, isOwner) {
       `;
     }
     return `
-      <div class="comment-item" data-id="${c.id}" data-depth="${depth}" style="margin-left:${indent}px">
+      <div class="comment-item" data-id="${c.id}" data-depth="${depth}" style="margin-left:${indent}px;width:calc(100% - ${indent}px)">
         <div class="comment-head">
           <span class="comment-author">${esc(c.author)}</span>
           <span class="comment-time">${formatDateTime(c.createdAt)}</span>
