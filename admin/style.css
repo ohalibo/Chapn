@@ -409,6 +409,11 @@ select:disabled { color: var(--ink-soft); }
 .post-list .pl-meta { font-size: 0.68rem; opacity: 0.7; }
 
 .editor-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
+.notice-comments-list { display: flex; flex-direction: column; gap: 12px; }
+.notice-comment-row { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.notice-comment-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.notice-comment-meta { font-size: 0.76rem; color: var(--ink-soft); }
+.notice-comment-body { font-size: 0.86rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
 .block-list { display: flex; flex-direction: column; gap: 24px; }
 .block-item { padding: 0; }
 .block-item-head {

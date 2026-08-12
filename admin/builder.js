@@ -11,6 +11,8 @@ export function mountBuilder(container, store) {
   let draft = null; // { title, blocks: [...], month: number|null (null = 전체 공지) }
   let dirty = false;
   let initialized = false;
+  let noticeComments = [];
+  let noticeCommentsUnsub = null;
 
   renderShell();
   store.subscribeAnnouncements((list) => {
@@ -46,9 +48,14 @@ export function mountBuilder(container, store) {
       months.map((m) => `<option value="${m.n}" ${draft.month === m.n ? "selected" : ""}>${esc(m.label)}</option>`).join("");
   }
 
+  function tsMillis(ts) {
+    if (!ts) return 0;
+    return typeof ts === "number" ? ts : ts.toMillis ? ts.toMillis() : Date.parse(ts) || 0;
+  }
+
   function formatDate(ts) {
     if (!ts) return "";
-    const ms = typeof ts === "number" ? ts : ts.toMillis ? ts.toMillis() : Date.parse(ts);
+    const ms = tsMillis(ts);
     if (!ms) return "";
     const d = new Date(ms);
     return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -119,6 +126,16 @@ export function mountBuilder(container, store) {
       draft = { title: a?.title || "", blocks: (a?.blocks || []).map((b) => ({ ...b })), month: a?.month ?? null };
     }
     dirty = false;
+
+    if (noticeCommentsUnsub) noticeCommentsUnsub();
+    noticeComments = [];
+    noticeCommentsUnsub = id
+      ? store.subscribeComments(`notice_${id}`, (list) => {
+          noticeComments = list;
+          renderNoticeComments();
+        })
+      : null;
+
     renderList();
     renderEditor();
   }
@@ -159,6 +176,12 @@ export function mountBuilder(container, store) {
             <button class="text-btn" id="add-image-btn">+ 사진</button>
           </div>
         </div>
+        ${selectedId ? `
+        <div class="field">
+          <label class="field-label">댓글</label>
+          <div class="notice-comments-list" id="notice-comments-list"></div>
+        </div>
+        ` : ""}
       </div>
       <div class="pane-head" style="border-top:1px solid var(--line); border-bottom:none; margin-top:auto; justify-content:space-between;">
         <span class="mono" id="footer-status" style="font-size:0.68rem; color:var(--ink-soft);"></span>
@@ -199,6 +222,7 @@ export function mountBuilder(container, store) {
     });
 
     renderBlockList();
+    renderNoticeComments();
 
     document.getElementById("add-text-btn").addEventListener("click", () => {
       draft.blocks.push({ type: "text", content: "" });
@@ -219,6 +243,49 @@ export function mountBuilder(container, store) {
     const el = document.getElementById("footer-status");
     if (!el) return;
     el.textContent = dirty ? "저장 안 됨" : selectedId ? "저장됨" : "";
+  }
+
+  // 공지에 달린 댓글은 알림 없이 여기(공지 빌더 하단)에서만 확인해요.
+  // 답글 여부는 depth(들여쓰기)로만 표시하고, 운영진은 부적절한 댓글을
+  // 지울 수만 있어요(직접 댓글을 달진 않음).
+  function renderNoticeComments() {
+    const listEl = document.getElementById("notice-comments-list");
+    if (!listEl) return;
+    if (noticeComments.length === 0) {
+      listEl.innerHTML = '<p class="empty-state">아직 댓글이 없어요.</p>';
+      return;
+    }
+    const byId = new Map(noticeComments.map((c) => [c.id, c]));
+    function depthOf(c) {
+      let depth = 0;
+      let cur = c;
+      while (cur.parentId && byId.has(cur.parentId) && depth < 20) {
+        depth += 1;
+        cur = byId.get(cur.parentId);
+      }
+      return depth;
+    }
+    const sorted = [...noticeComments].sort((a, b) => tsMillis(a.createdAt) - tsMillis(b.createdAt));
+    listEl.innerHTML = sorted
+      .map((c) => {
+        const indent = Math.min(depthOf(c), 6) * 14;
+        return `
+        <div class="notice-comment-row" style="margin-left:${indent}px;width:calc(100% - ${indent}px)">
+          <div class="notice-comment-head">
+            <span class="notice-comment-meta"><strong>${esc(c.author || "")}</strong> · ${formatDate(c.createdAt)}</span>
+            <button type="button" class="text-btn text-btn-danger text-btn-sm" data-notice-comment-del="${c.id}">삭제</button>
+          </div>
+          <div class="notice-comment-body">${esc(c.content || "")}</div>
+        </div>`;
+      })
+      .join("");
+    listEl.querySelectorAll("[data-notice-comment-del]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const ok = await showConfirm("댓글을 삭제할까요?", { danger: true });
+        if (!ok) return;
+        await store.deleteComment(btn.dataset.noticeCommentDel);
+      });
+    });
   }
 
   function renderBlockList() {

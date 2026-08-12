@@ -29,7 +29,7 @@ let nowPlayingHandles = [];
 let allComments = [];
 let commentsDigestOpen = false;
 let commentsDigestTab = "mine"; // "mine" | "others"
-let mountedEntryKey = null;
+let mountedViewKey = null;
 let membersLoaded = false;
 let weeksLoaded = false;
 let monthsLoaded = false;
@@ -436,18 +436,30 @@ function updateSidebarNav(route) {
 
 function render() {
   if (!session) {
-    mountedEntryKey = null;
+    mountedViewKey = null;
     return renderGate();
   }
   const route = parseHash();
+
+  // 회고 화면을 벗어날 때만 그 전용 구독/재생 상태를 정리해요 — 공지 화면으로
+  // 넘어가는 경우도 포함이라, 아래 mountedViewKey 분기보다 먼저 처리해요.
+  if (route.view !== "entry" && entryUnsub) {
+    entryUnsub();
+    entryUnsub = null;
+    draft = null;
+  }
+  if (route.view !== "entry" && nowPlayingHandles.length) {
+    teardownNowPlaying();
+  }
+
   ensureShellMounted();
   updateSidebarNav(route);
 
   if (route.view === "entry") {
-    const key = `${route.kind}:${route.n}:${route.person}`;
-    if (key === mountedEntryKey) return; // 같은 회고를 계속 보고 있는 중 — 본문은 건드리지 않아요.
+    const key = `entry:${route.kind}:${route.n}:${route.person}`;
+    if (key === mountedViewKey) return; // 같은 회고를 계속 보고 있는 중 — 본문은 건드리지 않아요.
     // 주차/월 목록이나 팀원 목록이 아직 한 번도 안 왔으면(막 접속한 직후 등),
-    // 진짜로 없는 페이지인지 아직 판단할 수 없어요. 여기서 mountedEntryKey를
+    // 진짜로 없는 페이지인지 아직 판단할 수 없어요. 여기서 mountedViewKey를
     // 확정해버리면 나중에 데이터가 도착해도 다시 그려주지 않으니, 이 경우엔
     // "불러오는 중" 상태로만 두고 다음 render()를 기다려요.
     const periodLoaded = route.kind === "month" ? monthsLoaded : weeksLoaded;
@@ -456,30 +468,29 @@ function render() {
       if (view) view.innerHTML = `<div class="empty-state">불러오는 중...</div>`;
       return;
     }
-    mountedEntryKey = key;
+    mountedViewKey = key;
     renderEntry(route.kind, route.n, route.person);
     return;
   }
 
-  if (mountedEntryKey) {
-    mountedEntryKey = null;
-    if (entryUnsub) {
-      entryUnsub();
-      entryUnsub = null;
-      draft = null;
-    }
-    if (commentsUnsub) {
-      commentsUnsub();
-      commentsUnsub = null;
-      comments = [];
-      editingCommentId = null;
-    }
-    if (nowPlayingHandles.length) teardownNowPlaying();
+  if (route.view === "notice") {
+    const key = `notice:${route.noticeId}`;
+    if (key === mountedViewKey) return; // 같은 공지를 계속 보고 있는 중 — 댓글 입력창을 건드리지 않아요.
+    mountedViewKey = key;
+    renderNotice(route.noticeId);
+    return;
+  }
+
+  mountedViewKey = null;
+  if (commentsUnsub) {
+    commentsUnsub();
+    commentsUnsub = null;
+    comments = [];
+    editingCommentId = null;
   }
 
   if (route.view === "weeks") renderWeeks();
   else if (route.view === "people") renderPeople(route.kind, route.n);
-  else if (route.view === "notice") renderNotice(route.noticeId);
 }
 
 // ---------------------------------------------------------------------------
@@ -622,9 +633,10 @@ function renderEntry(kind, n, person) {
   });
 
   if (commentsUnsub) commentsUnsub();
-  commentsUnsub = store.subscribeComments(entryKey(kind, n, person), (list) => {
+  const commentsEntryId = entryKey(kind, n, person);
+  commentsUnsub = store.subscribeComments(commentsEntryId, (list) => {
     comments = list;
-    renderComments(kind, n, person, isOwner);
+    renderComments(commentsEntryId, !isOwner);
   });
 }
 
@@ -973,8 +985,8 @@ async function mountNowPlaying(container, source, titleCtx) {
     <hr class="now-playing-rule" />
     <div class="now-playing-row">
       <button type="button" class="now-playing-toggle" data-state="paused" aria-label="재생">
-        <span class="icon-play">▶</span>
-        <span class="icon-pause">⏸</span>
+        <span class="icon-play"><svg viewBox="0 0 12 14" width="11" height="13" fill="currentColor"><path d="M0 0 12 7 0 14Z"/></svg></span>
+        <span class="icon-pause"><svg viewBox="0 0 12 14" width="11" height="13" fill="currentColor"><rect x="0" width="4" height="14"/><rect x="8" width="4" height="14"/></svg></span>
       </button>
       <div class="now-playing-title" id="now-playing-title-mount"></div>
       <div class="now-playing-time">0:00 / 0:00</div>
@@ -1700,7 +1712,7 @@ async function doSave(kind, n, person) {
 // ---------------------------------------------------------------------------
 const COMMENT_MAX_INDENT_DEPTH = 6;
 
-function renderComments(kind, n, person, isOwner) {
+function renderComments(entryId, canPostNew) {
   const section = document.getElementById("comments-section");
   if (!section) return;
 
@@ -1762,7 +1774,7 @@ function renderComments(kind, n, person, isOwner) {
     <div class="comment-list">
       ${topLevel.length === 0 ? '<p class="comment-empty">아직 댓글이 없어요.</p>' : listHtml}
     </div>
-    ${!isOwner ? `
+    ${canPostNew ? `
       <div class="comment-form">
         <textarea id="new-comment-input" placeholder="댓글을 남겨보세요"></textarea>
         <div class="comment-form-actions">
@@ -1772,7 +1784,7 @@ function renderComments(kind, n, person, isOwner) {
     ` : ""}
   `;
 
-  if (!isOwner) {
+  if (canPostNew) {
     const input = document.getElementById("new-comment-input");
     input.addEventListener("input", () => {
       input.classList.toggle("is-dirty", input.value.length > 0);
@@ -1780,7 +1792,7 @@ function renderComments(kind, n, person, isOwner) {
     document.getElementById("submit-comment-btn").addEventListener("click", async () => {
       const content = input.value.trim();
       if (!content) return;
-      await store.addComment(entryKey(kind, n, person), { author: session.name, content, parentId: null });
+      await store.addComment(entryId, { author: session.name, content, parentId: null });
       input.value = "";
       input.classList.remove("is-dirty");
     });
@@ -1812,7 +1824,7 @@ function renderComments(kind, n, person, isOwner) {
       const textarea = form.querySelector("textarea");
       const content = textarea.value.trim();
       if (!content) return;
-      await store.addComment(entryKey(kind, n, person), { author: session.name, content, parentId });
+      await store.addComment(entryId, { author: session.name, content, parentId });
       textarea.value = "";
       textarea.classList.remove("is-dirty");
       form.hidden = true;
@@ -1822,13 +1834,13 @@ function renderComments(kind, n, person, isOwner) {
   section.querySelectorAll("[data-edit-comment]").forEach((btn) => {
     btn.addEventListener("click", () => {
       editingCommentId = btn.dataset.editComment;
-      renderComments(kind, n, person, isOwner);
+      renderComments(entryId, canPostNew);
     });
   });
   section.querySelectorAll("[data-cancel-edit]").forEach((btn) => {
     btn.addEventListener("click", () => {
       editingCommentId = null;
-      renderComments(kind, n, person, isOwner);
+      renderComments(entryId, canPostNew);
     });
   });
   section.querySelectorAll("[data-save-edit]").forEach((btn) => {
@@ -1898,11 +1910,21 @@ function renderNotice(id) {
     <div class="notice-title">${esc(notice.title || "제목 없음")}</div>
     <div class="notice-date">${formatDateTime(notice.createdAt)} 작성</div>
     <div class="notice-body">${blocksHtml || '<p class="ft-meta">내용이 없어요.</p>'}</div>
+    <div class="comments-section" id="comments-section"></div>
   `;
 
   const flatImages = groups.filter((g) => g.type === "images").flatMap((g) => g.items);
   view.querySelectorAll(".notice-body .photo-thumb img").forEach((img, i) => {
     img.addEventListener("click", () => openLightbox(flatImages[i].src, flatImages[i].caption));
+  });
+
+  // 공지 댓글은 "댓글 모아보기"엔 안 뜨고(운영진이 어드민 공지 빌더 하단에서
+  // 따로 확인), 회고처럼 글쓴이 구분 없이 로그인한 사람 누구나 남길 수 있어요.
+  if (commentsUnsub) commentsUnsub();
+  const noticeEntryId = `notice_${id}`;
+  commentsUnsub = store.subscribeComments(noticeEntryId, (list) => {
+    comments = list;
+    renderComments(noticeEntryId, true);
   });
 }
 
