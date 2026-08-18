@@ -23,6 +23,7 @@ let entryUnsub = null;
 let commentsUnsub = null;
 let draft = null;
 let dirty = false;
+let photosDirty = false; // 사진이 실제로 바뀌었을 때만 저장할 때 photos를 같이 보내기 위한 표시
 let comments = [];
 let editingCommentId = null;
 let nowPlayingHandles = [];
@@ -629,6 +630,7 @@ function renderEntry(kind, n, person) {
       updatedAt: entry?.updatedAt || null,
     };
     dirty = false;
+    photosDirty = false;
     renderEntryBody(kind, n, person, isOwner);
   });
 
@@ -1317,7 +1319,7 @@ function fillPhotoGrid(gridEl, editable) {
       rm.addEventListener("click", (e) => {
         e.stopPropagation();
         draft.photos.splice(idx, 1);
-        markDirty();
+        markPhotosDirty();
         fillPhotoGrid(gridEl, editable);
       });
       thumb.appendChild(rm);
@@ -1333,7 +1335,7 @@ function fillPhotoGrid(gridEl, editable) {
       captionInput.value = photo.caption || "";
       captionInput.addEventListener("input", (e) => {
         photo.caption = e.target.value;
-        markDirty();
+        markPhotosDirty();
         autoGrowTextarea(e.target);
       });
       card.appendChild(captionInput);
@@ -1372,7 +1374,7 @@ function fillPhotoGrid(gridEl, editable) {
           console.error(err);
         }
       }
-      markDirty();
+      markPhotosDirty();
       fillPhotoGrid(gridEl, editable);
     });
     gridEl.appendChild(addBtn);
@@ -1669,6 +1671,13 @@ function markDirty() {
   updateSaveStatus();
 }
 
+// 사진을 추가/삭제/설명 수정했을 때만 호출해요 — 저장할 때 사진이 안
+// 바뀌었으면 매번 수백 KB를 다시 안 보내도 되도록 표시해두는 용도예요.
+function markPhotosDirty() {
+  photosDirty = true;
+  markDirty();
+}
+
 function updateSaveStatus() {
   const el = document.getElementById("save-status");
   if (!el) return;
@@ -1681,7 +1690,7 @@ async function doSave(kind, n, person) {
   btn.textContent = "저장 중...";
   try {
     const saveFn = kind === "month" ? store.saveMonthEntry : store.saveEntry;
-    await saveFn(n, person, {
+    const payload = {
       keep: draft.keep,
       problem: draft.problem,
       try: draft.try,
@@ -1690,9 +1699,13 @@ async function doSave(kind, n, person) {
       shareType: draft.shareType,
       music: draft.music,
       musicTitle: draft.musicTitle,
-      photos: draft.photos,
-    });
+    };
+    // 사진은 실제로 바뀌었을 때만 같이 보내요 — 안 그러면 텍스트 한 줄만
+    // 고쳐도 매번 사진 전체(최대 수백 KB)를 다시 업로드하게 돼요.
+    if (photosDirty) payload.photos = draft.photos;
+    await saveFn(n, person, payload);
     dirty = false;
+    photosDirty = false;
     updateSaveStatus();
     KPT_FIELDS.forEach((f) => {
       const textarea = document.getElementById(`kpt-${f.key}`);

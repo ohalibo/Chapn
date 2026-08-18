@@ -5,7 +5,7 @@ export const FIRST_WEEK_START = "2026-07-01";
 export const WEEK_COUNT = 12;
 
 // 한 회고에 첨부할 수 있는 사진 장수 / 용량 가드 (Firestore 문서 1개 최대 1MB 제한 때문)
-export const MAX_PHOTOS = 6;
+export const MAX_PHOTOS = 2;
 export const MAX_PHOTO_BASE64_TOTAL = 700000; // 대략 700KB 상당의 문자 수
 export const PHOTO_MAX_WIDTH = 1000;
 export const PHOTO_JPEG_QUALITY = 0.72;

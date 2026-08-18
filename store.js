@@ -168,7 +168,7 @@ function createLocalStore() {
     async saveEntry(week, person, entry) {
       const data = load();
       const id = `w${week}_${person}`;
-      data.entries[id] = { week, person, ...entry, updatedAt: Date.now() };
+      data.entries[id] = { ...data.entries[id], week, person, ...entry, updatedAt: Date.now() };
       save(data);
       notify("entries");
     },
@@ -184,7 +184,7 @@ function createLocalStore() {
     async saveMonthEntry(month, person, entry) {
       const data = load();
       const id = `m${month}_${person}`;
-      data.entries[id] = { month, person, ...entry, updatedAt: Date.now() };
+      data.entries[id] = { ...data.entries[id], month, person, ...entry, updatedAt: Date.now() };
       save(data);
       notify("entries");
     },
