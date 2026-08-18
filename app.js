@@ -1323,15 +1323,18 @@ function fillPhotoGrid(gridEl, editable) {
       thumb.appendChild(rm);
     }
     card.appendChild(thumb);
+    let captionInput = null;
     if (editable) {
-      const captionInput = document.createElement("input");
-      captionInput.type = "text";
+      captionInput = document.createElement("textarea");
       captionInput.className = "photo-caption-input";
-      captionInput.placeholder = "사진 설명 (선택)";
+      captionInput.placeholder = "사진 설명 (선택, 200자 이내)";
+      captionInput.maxLength = 200;
+      captionInput.rows = 1;
       captionInput.value = photo.caption || "";
       captionInput.addEventListener("input", (e) => {
         photo.caption = e.target.value;
         markDirty();
+        autoGrowTextarea(e.target);
       });
       card.appendChild(captionInput);
     } else if (photo.caption) {
@@ -1341,6 +1344,7 @@ function fillPhotoGrid(gridEl, editable) {
       card.appendChild(caption);
     }
     gridEl.appendChild(card);
+    if (captionInput) autoGrowTextarea(captionInput);
   });
   if (editable && draft.photos.length < MAX_PHOTOS) {
     const addBtn = document.createElement("button");
